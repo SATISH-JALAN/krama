@@ -20,6 +20,17 @@ it, so this is still a valid way to judge the embedding/prefix/dedup
 pipeline itself, just not a substitute for measuring HNSW's own recall loss
 (a separate, later question once HNSW can actually run).
 
+Relevance resolution is via `parent_passage_id` (CORRECTED for the Sprint 3 chunking bake-off): a
+chunk's own text hash generally does NOT match the original passage's hash (it's a fragment, not the
+whole passage), so relevance can't be resolved by re-hashing chunk text the way strategy A's
+whole-passage chunks allowed. Every chunk row from ingest/03_chunk.py carries `parent_passage_id`
+(the hash 02_dedupe.py assigned to the ORIGINAL passage) -- a chunk counts as relevant iff its
+parent_passage_id matches a query's known-positive passage hash. Falls back to treating `passage_id`
+as its own parent when `parent_passage_id` is absent, for backward compatibility with strategy A's
+files (passages_dedup.jsonl), which predate this field and don't need it (whole passage == its own
+chunk). Multiple chunk rows can share one parent_passage_id (e.g. several sentences from one relevant
+passage) -- all of them count as relevant, any one appearing in top-k is a hit.
+
 Run: python eval/retrieval_eval.py --queries data/medium --passages data/medium/passages_dedup.jsonl \
     --embeddings data/medium/embeddings.npy --ids data/medium/embeddings_ids.json
 """
@@ -62,10 +73,29 @@ def dcg_at_k(relevances: list[int], k: int) -> float:
     )
 
 
+def build_parent_pid_to_rows(chunk_rows: list[dict], row_ids: list[str]) -> dict[str, list[int]]:
+    """Map parent_passage_id -> [row indices into the embedding matrix].
+
+    row_ids[i] is the chunk's own passage_id (per embeddings_ids.json, i.e.
+    the order actually embedded). chunk_rows carries parent_passage_id per
+    chunk. Join on passage_id, not list order -- 04_embed.py's output order
+    matches its input order today, but this makes that assumption explicit
+    and safe to break later rather than a silent positional dependency.
+    """
+    id_to_parent = {
+        r["passage_id"]: r.get("parent_passage_id", r["passage_id"]) for r in chunk_rows
+    }
+    out: dict[str, list[int]] = {}
+    for row_index, pid in enumerate(row_ids):
+        parent = id_to_parent.get(pid, pid)  # fallback: strategy A has no chunk file at all
+        out.setdefault(parent, []).append(row_index)
+    return out
+
+
 def evaluate(
     queries: list[dict],
     passage_embeddings: np.ndarray,
-    pid_to_row: dict[str, int],
+    parent_pid_to_rows: dict[str, list[int]],
     embed_query_fn,
     k_values: tuple[int, ...] = (1, 5, 10),
 ) -> dict:
@@ -86,8 +116,7 @@ def evaluate(
         positive_rows = set()
         for text in positive_texts:
             pid = passage_hash(text)
-            if pid in pid_to_row:
-                positive_rows.add(pid_to_row[pid])
+            positive_rows |= set(parent_pid_to_rows.get(pid, []))
         if not positive_rows:
             skipped_no_row += 1
             continue
@@ -128,6 +157,7 @@ def main():
     ap.add_argument("--langs", nargs="+", default=["hi", "bn", "ta"])
     ap.add_argument("--model", default="intfloat/multilingual-e5-small")
     ap.add_argument("--out", default=None, help="write JSON results here, e.g. eval/results/A.json")
+    ap.add_argument("--strategy", default=None, help="label for this run, included in the JSON output")
     args = ap.parse_args()
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "ingest"))
@@ -135,11 +165,14 @@ def main():
 
     passage_embeddings = np.load(args.embeddings)
     with open(args.ids, "r", encoding="utf-8") as f:
-        ids = json.load(f)
-    pid_to_row = {pid: i for i, pid in enumerate(ids)}
+        row_ids = json.load(f)
+
+    with io.open(args.passages, "r", encoding="utf-8") as f:
+        chunk_rows = [json.loads(line) for line in f]
+    parent_pid_to_rows = build_parent_pid_to_rows(chunk_rows, row_ids)
 
     queries = load_queries(args.queries, args.langs)
-    print(f"loaded {len(queries)} queries, {passage_embeddings.shape[0]} passages", file=sys.stderr)
+    print(f"loaded {len(queries)} queries, {passage_embeddings.shape[0]} chunks", file=sys.stderr)
 
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer(args.model)
@@ -149,7 +182,9 @@ def main():
             [add_query_prefix(text)], normalize_embeddings=True, convert_to_numpy=True
         )[0]
 
-    results = evaluate(queries, passage_embeddings, pid_to_row, embed_query_fn)
+    results = evaluate(queries, passage_embeddings, parent_pid_to_rows, embed_query_fn)
+    if args.strategy:
+        results = {"strategy": args.strategy, **results}
     print(json.dumps(results, indent=2), file=sys.stderr)
 
     if args.out:
