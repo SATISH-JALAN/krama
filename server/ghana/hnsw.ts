@@ -9,23 +9,40 @@
  * it type-checks, the same way embed.ts's tokenizer bug (missing
  * token_type_ids) only surfaced by actually running it.
  *
+ * Import is deliberately LAZY (dynamic `await import(...)` inside boot(),
+ * not a top-level static import): hnswlib-node throws at require-time on
+ * this machine ("Could not locate the bindings file"), not just at first
+ * use -- a static import would crash anything that imports this module
+ * transitively (server/index.ts included) the moment it's loaded, even
+ * code paths that never call boot(). Found this the hard way: server/
+ * index.ts couldn't even be imported for a basic smoke check until this
+ * was fixed. Change back to a static import once hnswlib-node actually
+ * works here (WSL2/Oracle) if the dynamic import ever feels unnecessary --
+ * but there's no cost to leaving it lazy either.
+ *
  * Index file compatibility: the .bin file loaded here is produced by
  * ingest/05_build_index.py using the Python `hnswlib` package, which wraps
  * the same underlying C++ library as hnswlib-node -- the on-disk format is
  * shared, no conversion step (confirmed via research, not yet via an actual
  * cross-load test since neither binding builds on this machine).
  */
-import { HierarchicalNSW } from "hnswlib-node";
+type HierarchicalNSWInstance = {
+  readIndexSync(path: string): void;
+  setEf(ef: number): void;
+  searchKnn(vector: number[], k: number): { neighbors: number[]; distances: number[] };
+  getCurrentCount(): number;
+};
 
 const SPACE = "ip"; // inner product -- CLAUDE.md #2, vectors are pre-normalized
 const DIM = 384;
 const DEFAULT_EF_SEARCH = 64; // ARCHITECTURE.md §5.3 tuning default, sweep before trusting
 
-let index: HierarchicalNSW | null = null;
+let index: HierarchicalNSWInstance | null = null;
 let idMap: string[] = []; // HNSW integer label -> passage_id, from *_id_map.json
 
 export async function boot(indexPath: string, idMapPath: string): Promise<void> {
-  index = new HierarchicalNSW(SPACE, DIM);
+  const { HierarchicalNSW } = await import("hnswlib-node");
+  index = new HierarchicalNSW(SPACE, DIM) as unknown as HierarchicalNSWInstance;
   index.readIndexSync(indexPath);
   index.setEf(DEFAULT_EF_SEARCH); // must be re-set after every readIndexSync -- CLAUDE.md/ARCHITECTURE.md §12 pitfall #8, it is NOT persisted in the index file
 
