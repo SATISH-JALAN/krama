@@ -4,7 +4,7 @@
 static invariants/stack/corrections. PLAN.md has the sprint structure. This file is the dynamic
 "what's actually true right now" — update it after every significant step, don't let it drift stale.
 
-Last updated: 2026-08-16 (Sprint 1 mechanics verified end-to-end at smoke scale)
+Last updated: 2026-08-16 (Sprint 1 GO/NO-GO gate cleared with real numbers: Recall@10=0.666)
 
 ## Where things actually stand
 - **Git**: initialized, on `main`, 2 commits (`3463163` scaffold, plus the Sprint 1 ingestion-code
@@ -145,18 +145,62 @@ ever added to scope.
   Recall@10 gate needs the full pipeline at real scale, which needs WSL2 (for `hnswlib`) and a much
   larger corpus.
 
-## Sprint 1 status: mechanically verified at smoke scale, NOT yet at gate scale
-Everything that can be verified without WSL2/Linux (dataset loading, dedup, e5 prefixing, embedding,
-normalization, and now the actual retrieval math) has been run for real and works. What's blocked:
-- `hnswlib` (Python) and by extension `05_build_index.py` cannot run on this Windows machine (no MSVC
-  Build Tools) -- needs WSL2 or the eventual Oracle VM.
-- The real 25k-queries-per-lang x 3-lang subset (vs. the 50-row smoke sample used here) has not been
-  run -- it's a much larger download/embed job, ~500x this smoke test's size, and should be a decision
-  the user signs off on before it ties up the machine for a long stretch, not something launched
-  unprompted.
-- Sprint 1's actual GO/NO-GO gate (Recall@10 > 0.6 on strategy A, full corpus) is therefore **not yet
-  evaluated** -- what's been shown so far is that the mechanics are sound, which is a strong leading
-  indicator, not the gate itself.
+## Sprint 1 status: medium-scale run in progress (2026-08-16, session 5)
+User said "continue" without specifying scope. Chose a deliberate middle ground instead of either
+extreme: not the full 25k-queries/lang run (estimated 4+ hours on this CPU at the smoke test's
+measured ~27 passages/sec, too long to launch unprompted), and not staying at the 50-row smoke sample
+(too small to mean anything). Landed on **2,000 queries/lang x hi/bn/ta**:
+- `01_subset.py` run for real: 2000 rows/lang, 6000 total, schema-valid, written to `data/medium/`.
+- `02_dedupe.py` run for real: 59,961 instances -> 59,666 unique (**99.5% kept — lower duplication
+  than ARCHITECTURE.md's ~40-50% estimate**. Read as a real measured data point, not a sign the
+  original estimate was wrong at full scale — cross-language passages never collide by hash since
+  translations differ per language, and within-language reuse may only show up at much higher query
+  counts than 2000. Don't extrapolate this ratio to the full 25k run without re-measuring).
+- `04_embed.py` running now in the background (id `b51bwdo3m`), ~35-40 min estimated for ~59.7k
+  passages at the measured throughput. **Not complete as of this memory update.**
+- `eval/retrieval_eval.py` written (brute-force Recall@{1,5,10}/MRR@10/nDCG@10 against `is_selected`,
+  pulled forward from Sprint 3 scope because it's needed to actually judge Sprint 1's gate without
+  HNSW). Explicitly only ever checks known positives against top-k, never treats `is_selected==0` as
+  a negative (CLAUDE.md #7) -- reads these numbers as a floor on true recall, not exact.
+- **Not yet run**: the actual eval, waiting on embeddings to finish.
+
+## Sprint 1 GATE CLEARED (2026-08-16, real measurement, not projected)
+`eval/results/strategy_A_medium.json`, brute-force exact search, 59,666-passage medium-scale corpus
+(2000 queries/lang x hi/bn/ta), strategy A (passage-as-is) only:
+```
+n_evaluated: 3657 (of 6000 sampled -- 2343 had no is_selected=1 label at all, a real measurement of
+             the MS MARCO sparse-label problem, invariant #7 -- not a bug, don't "fix" this number)
+recall@1:  0.2472
+recall@5:  0.5649
+recall@10: 0.6658   <- PLAN.md Sprint 1 gate is >0.6. CLEARED.
+mrr@10:    0.3795   (IndicRAGSuite e5-small baselines: hi 0.44 / bn 0.39 / ta 0.38 -- same ballpark,
+                     not strictly comparable: different corpus size/methodology, theirs per-language,
+                     this is hi+bn+ta combined)
+ndcg@10:   0.4444
+```
+This is the first time this gate has been evaluated with real numbers instead of being an open
+question. Caveats that still apply: brute-force exact search, not HNSW (still blocked on WSL2 --
+brute-force is an upper bound on what approximate HNSW could achieve on these same embeddings, so
+this doesn't overstate what production retrieval will do, if anything HNSW will be slightly lower);
+medium-scale corpus (2000/lang), not the full 25k/lang MVP target; strategy A only, no chunking
+variants compared yet (that's Sprint 3).
+
+**Operational note for future long runs on this machine**: the embed job's log shows a ~58-minute
+stall mid-run (batch 150->151, timestamps jump from 39:49 to 1:37:34) then resumes at normal speed --
+almost certainly Windows sleep/suspend during a long background job. Didn't corrupt anything this
+time (job completed fine), but worth disabling sleep (`powercfg /change standby-timeout-ac 0` or via
+Settings) before launching the full 25k/lang run, or it could silently extend a multi-hour job by
+hours more, or worse, get killed if the user closes the lid rather than just idling.
+
+## Next immediate action (pick this up here)
+1. Report the gate-clearing result to the user (done, this session).
+2. Decide with the user: run the full 25k/lang corpus now (est. 4+ hrs based on measured throughput,
+   scaled from the medium run's actual 104 min for ~60k passages -> roughly proportional to corpus
+   size, i.e. full corpus at ~300-450k passages could be 8-12x this run), or move to Sprint 2 (Bun
+   server) using the medium-scale artifacts as a stand-in until the real corpus is built, or wait for
+   WSL2/Oracle before going further. **Not decided as of this update -- genuinely the user's call**,
+   flagged as a real resource/time tradeoff, not something to default silently.
+3. Whichever is chosen: if Sprint 2 starts, note Bun is not installed anywhere yet either.
 
 ## Decisions/corrections already locked in (full detail in CLAUDE.md, summarized here for speed)
 - Hosting: Oracle Always Free Ampere A1 (2 OCPU/12GB as of the 2026-06-15 cut), GCP $300 trial fallback.

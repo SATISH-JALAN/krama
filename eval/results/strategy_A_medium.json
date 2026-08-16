@@ -1,0 +1,10 @@
+{
+  "n_evaluated": 3657,
+  "skipped_no_positive_label": 2343,
+  "skipped_positive_not_in_corpus": 0,
+  "recall@1": 0.2471971561389117,
+  "recall@5": 0.5649439431227782,
+  "recall@10": 0.6658463221219579,
+  "mrr@10": 0.37946339049702466,
+  "ndcg@10": 0.44437071064278477
+}
