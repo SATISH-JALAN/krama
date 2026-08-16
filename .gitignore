@@ -28,6 +28,9 @@ eval/results/*.csv
 eval/results/*.png
 bench/results/*.json
 
+# stray empty dir that showed up locally, not part of the repo layout
+docs/
+
 # os/editor
 .DS_Store
 Thumbs.db
