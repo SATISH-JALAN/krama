@@ -1,0 +1,11 @@
+{
+  "strategy": "A",
+  "n_evaluated": 1206,
+  "skipped_no_positive_label": 1194,
+  "skipped_positive_not_in_corpus": 0,
+  "recall@1": 0.25870646766169153,
+  "recall@5": 0.6061359867330016,
+  "recall@10": 0.7313432835820896,
+  "mrr@10": 0.40355333122746057,
+  "ndcg@10": 0.47576088611836803
+}
