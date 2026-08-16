@@ -127,7 +127,7 @@ recitation scheme) but don't let it cause confusion when reading code.
 | Embeddings | `onnxruntime-node` (not transformers.js) — arm64 prebuilt binaries confirmed shipped |
 | Tokenizer | native `tokenizers` (XLM-R SentencePiece) |
 | ANN index | `hnswlib-node` — always compiles from source (`node-gyp rebuild`), needs build-essential+python3 |
-| Lexical | hand-rolled BM25 (~150 LOC, Indic-aware tokenizer) |
+| Lexical | hand-rolled BM25 (~150 LOC, Indic-aware tokenizer), built AND queried in TS at server boot — not pre-built offline in Python (avoids a cross-language tokenizer-consistency risk, see MEMORY.md) |
 | Validation | `zod` |
 | STT | Sarvam `saaras:v3-realtime`, `wss://api.sarvam.ai/speech-to-text-realtime/ws`, `linear16` encoding |
 | LLM | `groq-sdk` (`openai/gpt-oss-20b`/`120b` or `qwen/qwen3.6-27b`), Cerebras via OpenAI-compatible fetch (avoid `zai-glm-4.7`) |
@@ -139,9 +139,9 @@ recitation scheme) but don't let it cause confusion when reading code.
 | Embedding model | `intfloat/multilingual-e5-small`, ONNX int8, mean-pooling w/ attention-mask (confirmed correct) |
 
 ## Current phase
-**Pre-Sprint--1, research pass complete.** Docs read/audited, CLAUDE.md + PLAN.md written and then
-corrected against live-verified research (2026-08-16): ARM/Bun risk downgraded, Oracle capacity risk
-confirmed with named retry tools, Cloudflare Tunnel+is-a.dev plan replaced with Caddy+sslip.io, exact
-Sarvam/Groq/Cerebras integration specifics captured, groundedness model chosen. Nothing left
-theoretically unresolved that blocks starting Sprint -1. No implementation code written yet. See
-PLAN.md for the sprint-by-sprint breakdown.
+**See `MEMORY.md` for the live, frequently-updated state** (what's actually running, what code exists,
+what's blocked, the immediate next action) — this section only gets refreshed at major milestones, so
+treat MEMORY.md as authoritative over this paragraph if they disagree. As of last edit: repo scaffolded
+and committed, local Python toolchain installed on Windows (WSL2 not available in this environment),
+Sprint 1 data-pipeline code in progress. Sprint -1 (Oracle capacity) and the ARM-specific half of
+Sprint 0 are blocked on human account/install steps not yet done.
