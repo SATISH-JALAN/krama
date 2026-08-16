@@ -1,0 +1,38 @@
+# artifacts (built or pulled, never committed — too large)
+artifacts/
+*.onnx
+*.bin
+*.npy
+
+# secrets
+.env
+.env.*
+*.pem
+*.key
+!server/**/*.key.ts
+
+# node
+node_modules/
+bun.lockb
+dist/
+.turbo/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+data/
+
+# eval outputs (regenerated, not source)
+eval/results/*.csv
+eval/results/*.png
+bench/results/*.json
+
+# os/editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# WSL <-> Windows sync artifacts, if this dir is ever mirrored
+*.swp
