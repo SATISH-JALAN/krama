@@ -54,3 +54,9 @@ Thumbs.db
 .agents/
 .claude/
 skills-lock.json
+
+# other people's repos cloned in for reference/study only -- never ship
+# someone else's code as part of KRAMA, this directory must never be
+# committed
+reference/
+RAGINGOA-main/
