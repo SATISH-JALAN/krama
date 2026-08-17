@@ -1,0 +1,39 @@
+# Everything not explicitly needed to boot server/index.ts is excluded here
+# -- keeps the build context small (data/artifacts/reference/.venv are all
+# large, several GB combined) and mirrors .gitignore's "exclude dir
+# contents, then re-include specific files" pattern (Docker can't
+# re-include a file whose parent directory is itself fully excluded).
+node_modules
+.git
+.venv
+__pycache__
+reference/
+RAGINGOA-main/
+web/
+docs/
+eval/
+ingest/
+bench/results
+*.md
+
+# only the deduped medium-scale corpus + its embeddings, nothing else
+# under data/ (smoke/bakeoff scratch data, raw per-language files, the
+# duplicate .npy copy of the embeddings already covered by .f32bin)
+data/*
+!data/medium
+data/medium/*
+!data/medium/passages_dedup.jsonl
+!data/medium/embeddings.f32bin
+!data/medium/embeddings_ids.json
+
+# only the fp32 ONNX model + tokenizer (not the rejected int8 model, see
+# CLAUDE.md's fp32-vs-int8 correction) + the calibrated thresholds
+artifacts/*
+!artifacts/onnx
+artifacts/onnx/*
+!artifacts/onnx/model.onnx
+!artifacts/onnx/tokenizer.json
+!artifacts/onnx/tokenizer_config.json
+!artifacts/onnx/special_tokens_map.json
+!artifacts/onnx/config.json
+!artifacts/thresholds.json
