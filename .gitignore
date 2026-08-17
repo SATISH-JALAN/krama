@@ -7,6 +7,7 @@ artifacts/
 # secrets
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 !server/**/*.key.ts
@@ -39,3 +40,9 @@ Thumbs.db
 
 # WSL <-> Windows sync artifacts, if this dir is ever mirrored
 *.swp
+
+# locally-installed agent skills (dev tooling used to build this repo, not
+# part of the shipped app — keep off the public repo)
+.agents/
+.claude/
+skills-lock.json

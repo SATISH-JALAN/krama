@@ -1,0 +1,31 @@
+:root {
+  /* Color — a functional three-color system, not decoration:
+     signal = the one active/primary accent, verified = grounded-only states,
+     refused = guardrail-refusal-only states. Never mix their jobs. */
+  --ink: #0b0d0c;
+  --ink-raised: #141613;
+  --paper: #ede9e0;
+  --paper-dim: #a8a49a;
+  --line: #2a2e2b;
+  --signal: #ff7a33;
+  --signal-dim: #7a3d1c;
+  --verified: #6ee7b0;
+  --verified-dim: #2e5544;
+  --refused: #ff5d5d;
+  --refused-dim: #5c2626;
+
+  /* Type — mono for UI chrome/data/numbers (always Latin/numeric), a real
+     Indic-coverage sans stack for actual transcript/answer content, which is
+     frequently Devanagari/Bengali/Tamil and cannot rely on a display face. */
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  --font-content: "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Tamil", system-ui,
+    -apple-system, sans-serif;
+
+  --radius: 3px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+  --space-6: 4rem;
+}
