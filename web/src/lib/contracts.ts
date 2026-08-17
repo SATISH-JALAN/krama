@@ -42,7 +42,7 @@ export function moduleForSpan(name: string): string | null {
   if (name.startsWith("l0") || name.startsWith("l1") || name.startsWith("l2") || name.startsWith("l4"))
     return "maun";
   if (name.includes("embed")) return "ghana";
-  if (name.includes("hnsw")) return "ghana";
+  if (name.includes("dense_search")) return "ghana";
   if (name.includes("bm25")) return "krama";
   if (name.includes("fuse")) return "jata";
   if (name.includes("extract")) return "krama";

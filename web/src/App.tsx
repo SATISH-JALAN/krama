@@ -6,7 +6,7 @@ import Answer from "./components/Answer";
 import Waterfall from "./components/Waterfall";
 import Footer from "./components/Footer";
 import { useVoiceInput } from "./hooks/useVoiceInput";
-import { queryBackend } from "./lib/api";
+import { queryBackend, queryVoice } from "./lib/api";
 import { langByCode } from "./lib/langs";
 import type { GroundedAnswer } from "./lib/contracts";
 import "./App.css";
@@ -30,12 +30,35 @@ export default function App() {
     [lang, busy],
   );
 
+  // Real path: send the whole utterance's PCM to /query/voice (real Sarvam
+  // batch STT server-side). Only falls back to the Web Speech transcript
+  // (via the text-only submit() above, which itself degrades to the mock
+  // responder) when no live server is configured or the voice route
+  // fails/times out -- there's no audio-capable mock to fall back to.
+  const submitVoice = useCallback(
+    async (webSpeechText: string, pcm: Int16Array) => {
+      if (busy) return;
+      setBusy(true);
+      const voiceResult = await queryVoice(pcm, lang);
+      if (voiceResult) {
+        setQueryText(voiceResult.transcript);
+        setResult(voiceResult);
+        setSource("live");
+        setBusy(false);
+      } else {
+        setQueryText(webSpeechText);
+        setBusy(false);
+        void submit(webSpeechText);
+      }
+    },
+    [lang, busy, submit],
+  );
+
   const voice = useVoiceInput({
     bcp47: langByCode(lang).bcp47,
-    onFinalTranscript: (text) => {
-      setQueryText(text);
+    onFinalTranscript: (text, pcm) => {
       voice.stop();
-      void submit(text);
+      void submitVoice(text, pcm);
     },
   });
 

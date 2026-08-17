@@ -3,6 +3,11 @@ import { mockQuery } from "./mock";
 
 const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 const LIVE_TIMEOUT_MS = 3000;
+// STT (real Sarvam batch transcription, server/stt/sarvam.ts) adds real
+// network + inference time on top of the fast-path budget CLAUDE.md #4
+// scopes handleQuery() to -- this endpoint is genuinely slower than /query,
+// not a bug, so it gets a longer timeout rather than the same one.
+const VOICE_TIMEOUT_MS = 12_000;
 
 export interface QueryResult {
   data: GroundedAnswer;
@@ -37,4 +42,39 @@ export async function queryBackend(text: string, lang: string, queryType = "DESC
     }
   }
   return { data: await mockQuery(text, lang), source: "mock" };
+}
+
+export interface VoiceQueryResult extends GroundedAnswer {
+  transcript: string;
+  detectedLang: string;
+}
+
+// Real path: POST raw 16kHz mono Int16 PCM to server/index.ts's
+// /query/voice route (real Sarvam batch STT -> handleQuery(), see
+// server/stt/sarvam.ts). Returns null if no live server is configured or
+// the request fails/times out -- there's no audio-capable mock to fall
+// back to, so the caller (App.tsx) is responsible for falling back to the
+// browser's own Web Speech transcript through queryBackend() instead.
+export async function queryVoice(
+  pcm: Int16Array,
+  lang: string,
+  queryType = "DESCRIPTION",
+): Promise<VoiceQueryResult | null> {
+  if (!API_URL) return null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), VOICE_TIMEOUT_MS);
+    const params = new URLSearchParams({ lang, queryType });
+    const res = await fetch(`${API_URL}/query/voice?${params}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: pcm.buffer as ArrayBuffer,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    return (await res.json()) as VoiceQueryResult;
+  } catch {
+    return null;
+  }
 }

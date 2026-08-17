@@ -5,15 +5,32 @@ export type VoiceInputState = "idle" | "listening" | "unsupported" | "denied";
 
 interface UseVoiceInputOpts {
   bcp47: string;
-  onFinalTranscript: (text: string) => void;
+  // Called once per utterance with BOTH the Web Speech transcript (for a
+  // no-server/mock fallback and instant interim display) AND the real
+  // accumulated Int16 PCM for the same utterance (for the real Sarvam STT
+  // path via /query/voice, server/stt/sarvam.ts). The caller decides which
+  // one actually drives the answer -- see App.tsx's submitVoice.
+  onFinalTranscript: (text: string, pcm: Int16Array) => void;
 }
 
-// Combines the real AudioWorklet PCM capture (E6.1 — feeds the waveform ring,
-// and is the on-ramp for a future Sarvam WS connection) with the Web Speech
-// API for live demo transcription today (see lib/speech.d.ts for why this
-// stands in for Sarvam right now). The two are independent: PCM capture is
-// real audio-pipeline plumbing, SpeechRecognition is just today's transcript
-// source. Losing one doesn't break the other.
+function concatInt16(chunks: Int16Array[]): Int16Array {
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Int16Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}
+
+// Combines the real AudioWorklet PCM capture (E6.1) with the Web Speech API.
+// PCM frames are accumulated for the whole utterance and hand off to real
+// Sarvam batch STT server-side (server/stt/sarvam.ts via /query/voice) --
+// batch, not streaming, matching the project's approved STT decision.
+// Web Speech's own transcript is kept too, purely as interim captions and
+// as the fallback source when no live server is configured (App.tsx's
+// queryBackend mock path can't take audio).
 export function useVoiceInput({ bcp47, onFinalTranscript }: UseVoiceInputOpts) {
   const [state, setState] = useState<VoiceInputState>("idle");
   const [interimText, setInterimText] = useState("");
@@ -24,6 +41,7 @@ export function useVoiceInput({ bcp47, onFinalTranscript }: UseVoiceInputOpts) {
 
   const pcmRef = useRef<PcmCapture | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const framesRef = useRef<Int16Array[]>([]);
 
   const stop = useCallback(() => {
     pcmRef.current?.stop();
@@ -37,13 +55,12 @@ export function useVoiceInput({ bcp47, onFinalTranscript }: UseVoiceInputOpts) {
   const start = useCallback(async () => {
     const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
+    framesRef.current = [];
     try {
       const pcm = new PcmCapture();
       await pcm.start({
-        onFrame: () => {
-          // Real Int16 PCM frames land here — nowhere to send them yet
-          // (server/stt/sarvam.ts's WS proxy doesn't exist), but the capture
-          // path is genuinely wired and ready for it.
+        onFrame: (frame) => {
+          framesRef.current.push(frame);
         },
         onLevel: (rms) => {
           levelRef.current = rms;
@@ -69,7 +86,7 @@ export function useVoiceInput({ bcp47, onFinalTranscript }: UseVoiceInputOpts) {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          onFinalTranscript(result[0].transcript);
+          onFinalTranscript(result[0].transcript, concatInt16(framesRef.current));
           setInterimText("");
         } else {
           interim += result[0].transcript;
