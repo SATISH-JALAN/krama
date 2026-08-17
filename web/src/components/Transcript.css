@@ -1,0 +1,42 @@
+.transcript {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 640px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-2);
+}
+
+.transcript-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--paper);
+  font-family: var(--font-content);
+  font-size: 1.05rem;
+  resize: none;
+  min-height: 1.6em;
+  max-height: 6em;
+}
+
+.transcript-input::placeholder {
+  color: var(--paper-dim);
+}
+
+.transcript-input.interim {
+  color: var(--paper-dim);
+  font-style: italic;
+}
+
+.transcript-submit {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--signal);
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.transcript-submit:disabled {
+  color: var(--paper-dim);
+}
