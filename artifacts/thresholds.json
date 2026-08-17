@@ -1,0 +1,9 @@
+{
+  "generatedAt": "2026-08-17T02:53:24.827Z",
+  "calibrationSource": "eval/results/guardrail_calibration.json",
+  "safetyThreshold": 0.84,
+  "oodThresholds": {
+    "minTopScore": 0.84,
+    "minCentroidCosine": 0
+  }
+}
