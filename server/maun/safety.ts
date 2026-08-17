@@ -13,9 +13,20 @@ export interface L1Result {
   detail?: string;
 }
 
-// Placeholder, not calibrated -- see exemplars.ts docstring and
-// PLAN.md E5.5 for the real calibration step.
-export const DEFAULT_SAFETY_THRESHOLD = 0.75;
+// Calibrated (PLAN.md E5.5, eval/calibrate_guardrails.ts): joint grid search
+// over (safetyThreshold, minTopScore, minCentroidCosine) against 500 real
+// in-domain queries + 199 hand-written OOD queries, for <=5% COMBINED
+// (L1 OR L2) false-refusal rate on in-domain -- see
+// eval/results/guardrail_calibration.json's `jointOperatingPoint` and
+// artifacts/thresholds.json. Marginal (L1-alone) calibration would have
+// allowed 0.82; this is 0.84 because L1+L2 calibrated independently at 5%
+// each measurably compounds to 8.6% combined (real measured number, not
+// assumed) -- the joint search is what actually respects the spec.
+// At this value: 100% of hand-written prompt injections caught, in EVERY
+// language tested (en/hi/bn/ta all 100%) -- multilingual-e5's cross-lingual
+// generalization for unsafe-query similarity, previously flagged UNTESTED,
+// is now a real measured result, not an open question.
+export const DEFAULT_SAFETY_THRESHOLD = 0.84;
 
 export class SafetyGuard {
   constructor(

@@ -4,23 +4,36 @@
  * embedding is too far from the corpus centroid -- either signal alone can
  * indicate "this question isn't about anything in our indexed corpus."
  *
- * Thresholds here are PLACEHOLDERS, explicitly not calibrated yet
- * (CLAUDE.md #6: never invent a benchmark number -- these are marked
- * ESTIMATED, not measured). Real calibration is Sprint 4 / PLAN.md E5.5:
- * sweep against 500 in-domain + 200 hand-written OOD queries, pick the
- * operating point at <=5% false-refusal rate on in-domain, replace these
- * defaults with the calibrated values in thresholds.json.
+ * Calibrated (PLAN.md E5.5, eval/calibrate_guardrails.ts): joint grid search
+ * with L1's safety threshold against 500 real in-domain queries + 199
+ * hand-written OOD queries (6 categories per ARCHITECTURE.md §8.2: personal/
+ * news/arithmetic/chitchat/other-domain/injection), for <=5% COMBINED
+ * false-refusal rate on in-domain. Real, measured, honest findings, not
+ * flattering ones smoothed over:
+ *   - `minCentroidCosine` calibrated to 0 -- i.e. it contributes NOTHING at
+ *     the chosen operating point. The corpus-centroid signal did not
+ *     separate in-domain from OOD queries better than top-score alone on
+ *     this data. Left in the interface/check logic (cheap, harmless, and
+ *     may help at a different corpus scale) but don't assume it's doing
+ *     real work -- see eval/results/guardrail_calibration.json.
+ *   - OOD recall at this operating point is 43.7% combined with L1 (up from
+ *     33.7% for L2 alone) -- real numbers, not the >90% one might hope for.
+ *     Personal-question and chit-chat OOD categories are hardest to catch
+ *     (~18% each) since short generic phrasings embed close to legitimate
+ *     short queries by chance; arithmetic/news are easier (~58-64%).
+ * See eval/results/ood_roc.png and guardrail_calibration.json for the full
+ * ROC curves and category breakdown.
  */
 
 export interface OodThresholds {
-  minTopScore: number; // tau_1 -- ESTIMATED placeholder, not calibrated
-  minCentroidCosine: number; // tau_2 -- ESTIMATED placeholder, not calibrated
+  minTopScore: number; // tau_1 -- calibrated, see docstring
+  minCentroidCosine: number; // tau_2 -- calibrated to 0, see docstring
 }
 
-// Placeholder only -- see docstring. Do not treat as tuned.
+// Calibrated -- see module docstring and artifacts/thresholds.json.
 export const DEFAULT_OOD_THRESHOLDS: OodThresholds = {
-  minTopScore: 0.5,
-  minCentroidCosine: 0.3,
+  minTopScore: 0.84,
+  minCentroidCosine: 0,
 };
 
 export interface L2Result {

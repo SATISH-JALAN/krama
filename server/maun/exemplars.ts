@@ -2,12 +2,18 @@
  * maun -- L1 safety exemplar set (PLAN.md E5.2). Embedded once at boot;
  * an incoming query is refused if its embedding is too similar to any
  * exemplar here (ARCHITECTURE.md §8.1: "keyword + embedding vs exemplar
- * set"). English-only for now -- multilingual-e5-small should place
- * semantically similar Hindi/Bengali/Tamil unsafe queries near these in
- * embedding space too, but that cross-lingual generalization is UNTESTED,
- * not confirmed (CLAUDE.md #6: don't claim it works before measuring it).
- * Calibrate the similarity threshold against real in-domain vs. adversarial
- * queries in Sprint 4 (PLAN.md E5.5), same as the OOD thresholds.
+ * set"). English-only.
+ *
+ * Cross-lingual generalization -- previously flagged UNTESTED here -- was
+ * measured for real in PLAN.md E5.5's calibration pass
+ * (eval/calibrate_guardrails.ts): 32 hand-written prompt-injection queries
+ * held out across en/hi/bn/ta (none of them in this list), 100% caught in
+ * EVERY language at the calibrated threshold (safety.ts's
+ * DEFAULT_SAFETY_THRESHOLD). multilingual-e5-small really does place
+ * semantically-unsafe Hindi/Bengali/Tamil queries close to these
+ * English-only exemplars in embedding space -- confirmed, not assumed
+ * (CLAUDE.md #6). See eval/results/guardrail_calibration.json's
+ * `crossLingualInjectionGeneralization`.
  */
 
 export const SAFETY_EXEMPLARS: string[] = [

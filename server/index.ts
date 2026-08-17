@@ -18,6 +18,7 @@
  */
 import { Hono } from "hono";
 import { z } from "zod";
+import { readFileSync } from "fs";
 
 import { GroundedAnswer, type Span } from "./harness/contracts";
 import { runStage } from "./harness/pipeline";
@@ -28,8 +29,8 @@ import { Bm25Index } from "./bm25";
 import { rrfRanked } from "./jata/fuse";
 import { extractSpan, type ExtractCandidate } from "./krama/extract";
 import { checkL0 } from "./maun/input";
-import { SafetyGuard } from "./maun/safety";
-import { OodGuard, computeCentroid } from "./maun/ood";
+import { SafetyGuard, DEFAULT_SAFETY_THRESHOLD } from "./maun/safety";
+import { OodGuard, computeCentroid, DEFAULT_OOD_THRESHOLDS } from "./maun/ood";
 
 const RETRIEVAL_TOP_K = 10;
 
@@ -43,12 +44,45 @@ interface BootState {
 
 let state: BootState | null = null;
 
+// Shape written by eval/calibrate_guardrails.ts (PLAN.md E5.5). Validated
+// with Zod like every other artifact boundary (ARCHITECTURE.md §7) rather
+// than trusted blindly, since it's read from disk.
+const ThresholdsArtifact = z.object({
+  safetyThreshold: z.number(),
+  oodThresholds: z.object({ minTopScore: z.number(), minCentroidCosine: z.number() }),
+});
+
+export function loadThresholds(thresholdsPath?: string): {
+  safetyThreshold: number;
+  oodThresholds: { minTopScore: number; minCentroidCosine: number };
+} {
+  if (!thresholdsPath) {
+    return { safetyThreshold: DEFAULT_SAFETY_THRESHOLD, oodThresholds: DEFAULT_OOD_THRESHOLDS };
+  }
+  try {
+    const raw = JSON.parse(readFileSync(thresholdsPath, "utf-8"));
+    return ThresholdsArtifact.parse(raw);
+  } catch (e) {
+    // A malformed/missing calibration artifact should fall back to the
+    // (also real, just less specific) calibrated defaults baked into
+    // safety.ts/ood.ts, not crash boot -- but this is surprising enough to
+    // be worth a loud log, not a silent swallow.
+    console.warn(`could not load thresholds from ${thresholdsPath}, using built-in defaults: ${e}`);
+    return { safetyThreshold: DEFAULT_SAFETY_THRESHOLD, oodThresholds: DEFAULT_OOD_THRESHOLDS };
+  }
+}
+
 /**
  * Loads every artifact needed to serve. UNVERIFIED end-to-end on this
  * machine -- see module docstring. `corpus` is the deduped passage list
  * (same shape as ingest/02_dedupe.py's output); `safetyExemplarEmbeddings`
  * must be precomputed the same way query embeddings are (same model,
- * `query:` prefix -- exemplars are phrased as queries).
+ * `query:` prefix -- exemplars are phrased as queries). `thresholdsPath`
+ * is optional -- points at artifacts/thresholds.json (PLAN.md E5.5's
+ * calibration output); omitted or unreadable falls back to the calibrated
+ * DEFAULT_* constants baked into safety.ts/ood.ts, not stale placeholders --
+ * both are real calibrated values now, this just lets a redeployed
+ * calibration take effect without a code change.
  */
 export async function boot(opts: {
   onnxArtifactDir: string;
@@ -57,6 +91,7 @@ export async function boot(opts: {
   corpus: { passageId: string; text: string; lang: string }[];
   safetyExemplarEmbeddings: Float32Array[];
   passageEmbeddingsForCentroid: Float32Array[];
+  thresholdsPath?: string;
 }): Promise<void> {
   await embed.boot(opts.onnxArtifactDir);
   await hnsw.boot(opts.hnswIndexPath, opts.hnswIdMapPath);
@@ -69,11 +104,12 @@ export async function boot(opts: {
   );
 
   const centroid = computeCentroid(opts.passageEmbeddingsForCentroid);
+  const thresholds = loadThresholds(opts.thresholdsPath);
 
   state = {
     bm25,
-    safetyGuard: new SafetyGuard(opts.safetyExemplarEmbeddings),
-    oodGuard: new OodGuard(centroid),
+    safetyGuard: new SafetyGuard(opts.safetyExemplarEmbeddings, thresholds.safetyThreshold),
+    oodGuard: new OodGuard(centroid, thresholds.oodThresholds),
     cache: new SemanticCache(),
     passageTextById,
   };

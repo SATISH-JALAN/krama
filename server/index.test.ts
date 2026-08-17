@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createApp } from "./index";
+import { writeFileSync, unlinkSync, mkdirSync } from "fs";
+import { createApp, loadThresholds } from "./index";
+import { DEFAULT_SAFETY_THRESHOLD } from "./maun/safety";
+import { DEFAULT_OOD_THRESHOLDS } from "./maun/ood";
 
 /**
  * Only covers what's testable without boot() -- boot() needs a real HNSW
@@ -35,5 +38,57 @@ describe("createApp", () => {
       body: JSON.stringify({ text: "what is a corporation?", lang: "hindi" }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("loadThresholds", () => {
+  test("falls back to the calibrated DEFAULT_* constants when no path given", () => {
+    const t = loadThresholds(undefined);
+    expect(t.safetyThreshold).toBe(DEFAULT_SAFETY_THRESHOLD);
+    expect(t.oodThresholds).toEqual(DEFAULT_OOD_THRESHOLDS);
+  });
+
+  test("loads a real calibration-artifact-shaped file", () => {
+    // artifacts/ is gitignored (built, not committed -- ARCHITECTURE.md §3),
+    // so this test can't depend on the real thresholds.json existing after
+    // a fresh clone; it writes a fixture in exactly the shape
+    // eval/calibrate_guardrails.ts actually produces instead. That real
+    // file was separately confirmed to round-trip through this same
+    // function during PLAN.md E5.5's calibration run.
+    const path = "artifacts/_test_thresholds_fixture.json";
+    mkdirSync("artifacts", { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        calibrationSource: "eval/results/guardrail_calibration.json",
+        safetyThreshold: 0.84,
+        oodThresholds: { minTopScore: 0.84, minCentroidCosine: 0 },
+      }),
+    );
+    try {
+      const t = loadThresholds(path);
+      expect(t.safetyThreshold).toBe(0.84);
+      expect(t.oodThresholds).toEqual({ minTopScore: 0.84, minCentroidCosine: 0 });
+    } finally {
+      unlinkSync(path);
+    }
+  });
+
+  test("falls back without throwing when the artifact is missing", () => {
+    const t = loadThresholds("artifacts/does_not_exist.json");
+    expect(t.safetyThreshold).toBe(DEFAULT_SAFETY_THRESHOLD);
+  });
+
+  test("falls back without throwing when the artifact is malformed", () => {
+    const path = "artifacts/_test_malformed_thresholds.json";
+    mkdirSync("artifacts", { recursive: true });
+    writeFileSync(path, JSON.stringify({ wrong: "shape" }));
+    try {
+      const t = loadThresholds(path);
+      expect(t.oodThresholds).toEqual(DEFAULT_OOD_THRESHOLDS);
+    } finally {
+      unlinkSync(path);
+    }
   });
 });
