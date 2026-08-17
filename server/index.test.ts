@@ -39,6 +39,16 @@ describe("createApp", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  test("/query/voice 503s before boot() (STT never configured)", async () => {
+    const app = createApp();
+    const res = await app.request("/query/voice", {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: new Int16Array([1, 2, 3]).buffer,
+    });
+    expect(res.status).toBe(503);
+  });
 });
 
 describe("loadThresholds", () => {

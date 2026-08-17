@@ -24,6 +24,14 @@ export const RetrievedChunk = z.object({
 });
 export type RetrievedChunk = z.infer<typeof RetrievedChunk>;
 
+export const Span = z.object({
+  name: z.string(),
+  ms: z.number(),
+  ok: z.boolean(),
+  err: z.string().optional(),
+});
+export type Span = z.infer<typeof Span>;
+
 export const GroundedAnswer = z.object({
   answer: z.string(),
   citations: z.array(z.string()).min(1), // chunk_ids -- enforced non-empty when not refused
@@ -34,13 +42,14 @@ export const GroundedAnswer = z.object({
     .optional(),
   // "empty_or_gibberish" replaces ARCHITECTURE.md's original "low_asr" --
   // there is no ASR confidence signal to gate on (see Transcript above).
+  // Optional so a stage that never populates it (or an older server build)
+  // degrades honestly on the frontend instead of the UI inventing timings
+  // -- see web/src/components/Waterfall.tsx.
+  trace: z.array(Span).optional(),
+  // Whether this answer was served from harness/cache.ts's semantic cache
+  // (cos>0.97 against a prior query) instead of a fresh retrieval -- lets
+  // callers (bench/latency.ts) report cached/uncached latency separately,
+  // CLAUDE.md invariant #4 -- never conflate the two.
+  cached: z.boolean().optional(),
 });
 export type GroundedAnswer = z.infer<typeof GroundedAnswer>;
-
-export const Span = z.object({
-  name: z.string(),
-  ms: z.number(),
-  ok: z.boolean(),
-  err: z.string().optional(),
-});
-export type Span = z.infer<typeof Span>;
