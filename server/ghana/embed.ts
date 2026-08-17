@@ -32,6 +32,7 @@
  * not tokenization.
  */
 import * as ort from "onnxruntime-node";
+import { resolve } from "path";
 import { AutoTokenizer, type PreTrainedTokenizer } from "@huggingface/transformers";
 
 const QUERY_PREFIX = "query: ";
@@ -60,7 +61,17 @@ export async function boot(
     interOpNumThreads: 1,
     graphOptimizationLevel: "all",
   });
-  tokenizer = await AutoTokenizer.from_pretrained(artifactDir);
+  // @huggingface/transformers' from_pretrained() treats any relative path
+  // that happens to match its Hub repo-id regex (owner/repo -- a single
+  // "/", word chars only) as a Hub id, not a local directory. "artifacts/
+  // onnx" matches that shape, so it silently looked for tokenizer files
+  // under its own package-relative model cache instead of our directory,
+  // failing with "tokenizerConfig.tokenizer_class" on undefined -- found by
+  // actually running boot() against real artifacts, not from reading the
+  // library's docs. Resolving to an absolute path first (which contains a
+  // drive letter/colon on Windows, or a leading "/" -- neither matches the
+  // repo-id regex) makes it correctly treat this as a local directory.
+  tokenizer = await AutoTokenizer.from_pretrained(resolve(artifactDir));
 }
 
 function meanPool(

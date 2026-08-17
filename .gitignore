@@ -1,8 +1,15 @@
-# artifacts (built or pulled, never committed — too large)
-artifacts/
+# artifacts (built or pulled, never committed — too large). `artifacts/*`,
+# not `artifacts/`, is deliberate -- git can't re-include a file whose
+# PARENT DIRECTORY is itself excluded, only its contents, so the whole-dir
+# form would silently defeat the thresholds.json negation below.
+artifacts/*
 *.onnx
 *.bin
 *.npy
+# ...except the calibrated guardrail thresholds (PLAN.md E5.5) -- tiny,
+# and ARCHITECTURE.md §8.2 explicitly calls for committing it, unlike the
+# multi-GB model/index artifacts around it.
+!artifacts/thresholds.json
 
 # secrets
 .env
@@ -27,6 +34,7 @@ data/
 # eval outputs (regenerated, not source)
 eval/results/*.csv
 eval/results/*.png
+!eval/results/ood_roc.png
 bench/results/*.json
 
 # stray empty dir that showed up locally, not part of the repo layout
