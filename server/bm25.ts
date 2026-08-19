@@ -46,12 +46,14 @@ const B = 0.4;
 
 export class Bm25Index {
   private docIds: string[] = [];
+  private docLangs: string[] = [];
   private docLengths: number[] = [];
   private avgDocLength = 0;
   private postings = new Map<string, Posting[]>();
 
   build(docs: Bm25Doc[]): void {
     this.docIds = [];
+    this.docLangs = [];
     this.docLengths = [];
     this.postings = new Map();
 
@@ -59,6 +61,7 @@ export class Bm25Index {
     docs.forEach((doc, docIndex) => {
       const tokens = tokenize(doc.text, doc.lang);
       this.docIds.push(doc.id);
+      this.docLangs.push(doc.lang);
       this.docLengths.push(tokens.length);
       totalLength += tokens.length;
 
@@ -90,6 +93,11 @@ export class Bm25Index {
       const idf = Math.log((N - n + 0.5) / (n + 0.5) + 1);
 
       for (const { docIndex, termFreq } of list) {
+        // Restrict candidates to the query's own language -- shared tokens
+        // (digits, URLs, English loanwords embedded in other scripts) can
+        // otherwise leak a doc from the wrong language into the results,
+        // same class of bug dense search had (server/ghana/bruteforce.ts).
+        if (this.docLangs[docIndex] !== lang) continue;
         const docLen = this.docLengths[docIndex];
         const denom = termFreq + K1 * (1 - B + (B * docLen) / (this.avgDocLength || 1));
         const termScore = idf * ((termFreq * (K1 + 1)) / denom);

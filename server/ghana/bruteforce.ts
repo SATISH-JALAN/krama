@@ -21,8 +21,19 @@ const DIM = 384;
 
 let embeddings: Float32Array | null = null;
 let ids: string[] = [];
+// Parallel to `ids` -- which language each row's passage is in, so search()
+// can restrict candidates to the query's own language. Without this, dense
+// search ranks across the whole (now 4-language: hi/bn/ta/en) corpus at
+// once, and a Hindi query can end up "grounded" in a Tamil passage the user
+// never asked for and can't read -- a real bug found by voice-testing the
+// live app, not a hypothetical.
+let langs: string[] = [];
 
-export async function boot(embeddingsPath: string, idsPath: string): Promise<void> {
+export async function boot(
+  embeddingsPath: string,
+  idsPath: string,
+  passageIdToLang?: Map<string, string>,
+): Promise<void> {
   const buf = await Bun.file(embeddingsPath).arrayBuffer();
   const arr = new Float32Array(buf);
   if (arr.length % DIM !== 0) {
@@ -39,15 +50,18 @@ export async function boot(embeddingsPath: string, idsPath: string): Promise<voi
 
   embeddings = arr;
   ids = parsedIds;
+  langs = passageIdToLang ? parsedIds.map((id) => passageIdToLang.get(id) ?? "") : [];
 }
 
 export function search(
   queryVector: Float32Array,
   topK: number,
+  filterLang?: string,
 ): { passageId: string; score: number }[] {
   if (!embeddings) throw new Error("bruteforce.boot() must be called first");
 
   const n = ids.length;
+  const useFilter = !!filterLang && langs.length === n;
   // Vectors are pre-normalized (CLAUDE.md #2), so inner product == cosine --
   // a plain dot product against every row, same computation as
   // eval/calibrate_guardrails.ts's maxDotAgainstCorpus, generalized to
@@ -56,6 +70,10 @@ export function search(
   // top-k structure, matching the calibration run's own measured latency.
   const scores = new Float32Array(n);
   for (let i = 0; i < n; i++) {
+    if (useFilter && langs[i] !== filterLang) {
+      scores[i] = -Infinity;
+      continue;
+    }
     const base = i * DIM;
     let dot = 0;
     for (let d = 0; d < DIM; d++) dot += queryVector[d] * embeddings[base + d];
@@ -63,7 +81,10 @@ export function search(
   }
 
   const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => scores[b] - scores[a]);
-  return order.slice(0, topK).map((i) => ({ passageId: ids[i], score: scores[i] }));
+  return order
+    .slice(0, topK)
+    .filter((i) => scores[i] !== -Infinity)
+    .map((i) => ({ passageId: ids[i], score: scores[i] }));
 }
 
 export function size(): number {
