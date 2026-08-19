@@ -1,9 +1,11 @@
 {
-  "generatedAt": "2026-08-17T02:53:24.827Z",
-  "calibrationSource": "eval/results/guardrail_calibration.json",
-  "safetyThreshold": 0.84,
+  "generatedAt": "2026-08-20T00:00:00.000Z",
+  "calibrationSource": "eval/results/guardrail_calibration.json + eval/results/reranker_calibration.json (rerankMinScore deliberately overridden, see note)",
+  "safetyThreshold": 0.83,
   "oodThresholds": {
-    "minTopScore": 0.84,
+    "minTopScore": 0.82,
     "minCentroidCosine": 0
-  }
+  },
+  "rerankMinScore": -2.0,
+  "rerankMinScoreNote": "Operating point re-picked after llm/synthesize.ts's answerFromGeneralKnowledge() fallback landed, because that changed the cost of a false refusal rather than any measurement. Under the old design a refusal was a dead end, so the threshold was held at -4.0 to protect a ~10% in-domain false-refusal rate -- but that left OOD catch at only 46.2%, and live probing confirmed what that means in practice: 'who built the Taj Mahal' (rerank logit -2.00) returned an unrelated passage about the President of Tanzania, and 'what is the capital of India' (-2.16) returned the definition of 'crore', both served as grounded answers. Now that an L3 refusal routes to a labelled ungrounded general-knowledge answer instead of a dead end, over-refusing costs a user very little while under-refusing still produces a confidently-wrong grounded answer -- the asymmetry that set -4.0 has inverted. -2.0 (in-domain FPR 18.6%, OOD TPR 67.3%, see eval/results/reranker_calibration.json's roc array) refuses both probe cases above. Note the in-domain FPR figure is now pessimistic as a user-facing quality number: those queries are answered by the fallback rather than dropped, so it measures 'answered without corpus grounding', not 'not answered'."
 }
