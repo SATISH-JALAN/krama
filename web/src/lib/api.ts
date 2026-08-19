@@ -109,7 +109,11 @@ export async function queryVoice(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), VOICE_TIMEOUT_MS);
-    const params = new URLSearchParams({ lang, queryType });
+    // Omitted entirely for "auto" -- sending a language_code makes Sarvam
+    // transcribe AS that language rather than detect, which is what made
+    // English speech come back in Devanagari.
+    const params = new URLSearchParams({ queryType });
+    if (lang && lang !== "auto") params.set("lang", lang);
     const res = await fetch(`${API_URL}/query/voice?${params}`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },

@@ -21,7 +21,7 @@ function synthesisWorthTrying(data: GroundedAnswer): boolean {
 }
 
 export default function App() {
-  const [lang, setLang] = useState("hi");
+  const [lang, setLang] = useState("auto");
   const [queryText, setQueryText] = useState("");
   const [result, setResult] = useState<GroundedAnswer | null>(null);
   const [source, setSource] = useState<"live" | "mock" | null>(null);
