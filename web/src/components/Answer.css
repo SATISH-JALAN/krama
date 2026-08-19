@@ -27,9 +27,53 @@
   border-color: var(--verified-dim);
 }
 
+/* One card, not the two-up grounded/synthesized pair -- there is no grounded
+   answer to sit beside when retrieval refused. */
+.answer-grid.single {
+  grid-template-columns: 1fr;
+  margin-top: var(--space-3);
+}
+
+/* Deliberately amber, never the verified green: this answer has no passage
+   behind it, and the whole point of showing it is that a user can tell that
+   at a glance. The :first-child rule above would otherwise paint it green. */
+.answer-card.ungrounded,
+.answer-card.ungrounded.ready:first-child {
+  border-color: var(--signal-dim);
+}
+
+.answer-card.ungrounded .eyebrow {
+  color: var(--signal);
+}
+
+.answer-ungrounded-note {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--paper-dim);
+  border-left: 2px solid var(--signal-dim);
+  padding-left: var(--space-2);
+}
+
 .answer-text {
   font-size: 0.98rem;
   line-height: 1.6;
+}
+
+.answer-romanized {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--paper-dim);
+  border-left: 2px solid var(--line);
+  padding-left: var(--space-2);
+}
+
+.answer-romanized-label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--signal-dim);
+  margin-bottom: 2px;
 }
 
 .answer-unavailable {
@@ -51,20 +95,10 @@
   color: var(--paper-dim);
 }
 
-.cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  background: var(--signal);
-  margin-left: 2px;
-  vertical-align: -0.15em;
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
+.answer-declined {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--refused);
 }
 
 .answer-skeleton {

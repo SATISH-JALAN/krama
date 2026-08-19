@@ -1,8 +1,15 @@
-import type { GroundedAnswer } from "./contracts";
+import type { GroundedAnswer, SynthesisResponse } from "./contracts";
 import { mockQuery } from "./mock";
 
 const API_URL = import.meta.env.VITE_API_URL as string | undefined;
 const LIVE_TIMEOUT_MS = 3000;
+// LLM round-trip, genuinely off the t0->t1 core budget (CLAUDE.md #4) --
+// this is the slow path by design, not a bug, so it gets real headroom.
+// Matches server/index.ts's LLM_RETRY_OPTS.deadlineMs (30s) -- found via
+// live testing that a single real Gemini call can take up to ~19s even
+// with minimal thinking, so the frontend shouldn't give up before the
+// backend's own retry budget does.
+const SYNTHESIZE_TIMEOUT_MS = 30_000;
 // STT (real Sarvam batch transcription, server/stt/sarvam.ts) adds real
 // network + inference time on top of the fast-path budget CLAUDE.md #4
 // scopes handleQuery() to -- this endpoint is genuinely slower than /query,
@@ -42,6 +49,44 @@ export async function queryBackend(text: string, lang: string, queryType = "DESC
     }
   }
   return { data: await mockQuery(text, lang), source: "mock" };
+}
+
+// Distinguishes WHY a synthesis attempt didn't produce an answer -- "no key
+// configured on this server at all" (503) and "a key is configured but the
+// call itself failed" (network error, timeout, or every provider erroring
+// out, e.g. a real 429 quota exhaustion hit during testing) look identical
+// from a naive null-check, but are different situations a user would
+// reasonably want to know apart -- one says "this feature isn't set up
+// here", the other says "it's set up, something transient went wrong."
+export type SynthesizeOutcome =
+  | { status: "ok"; data: SynthesisResponse }
+  | { status: "not_configured" }
+  | { status: "failed" };
+
+// Separate request from queryBackend's /query, called after the fast
+// answer already landed (App.tsx), never blocking it.
+export async function querySynthesize(
+  text: string,
+  lang: string,
+  queryType = "DESCRIPTION",
+): Promise<SynthesizeOutcome> {
+  if (!API_URL) return { status: "failed" };
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SYNTHESIZE_TIMEOUT_MS);
+    const res = await fetch(`${API_URL}/query/synthesize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, lang, queryType }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.status === 503) return { status: "not_configured" };
+    if (!res.ok) return { status: "failed" };
+    return { status: "ok", data: (await res.json()) as SynthesisResponse };
+  } catch {
+    return { status: "failed" };
+  }
 }
 
 export interface VoiceQueryResult extends GroundedAnswer {

@@ -69,6 +69,10 @@ export async function mockQuery(text: string, lang: string): Promise<GroundedAns
     synthesized: {
       answer: passage.answer + (lang === "en" ? " (Synthesized, off the critical path.)" : ""),
       streaming: false,
+      declined: false,
+      provider: "mock",
+      citedChunkIds: [passage.citation],
+      grounded: true,
     },
   };
 }
