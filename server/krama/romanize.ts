@@ -59,6 +59,51 @@ export function romanizationLabel(lang: string): string | null {
 }
 
 /** Returns null for English (nothing to romanize) or empty input. */
+
+/**
+ * Turns Sanscript's ITRANS-style output into something a Hinglish reader
+ * would actually write. The raw scheme is a faithful ACADEMIC
+ * transliteration -- it encodes vowel length and retroflexion with doubled
+ * letters, capitals and dots ("taajamahala", "shaahajahaa.N") -- which is
+ * lossless but not what anyone types. Nobody writes "kaMpanii"; they write
+ * "kampani".
+ *
+ * Reported directly by a user: the romanized answer was as unreadable as
+ * the Devanagari it was meant to make accessible, which defeats the point
+ * of having it. Losing the length/retroflexion distinctions is the correct
+ * trade here, because informal romanization drops them too.
+ *
+ * Applies only word-FINAL schwa deletion, not the general rule. Hindi also
+ * deletes schwa word-internally ("tajamahal" -> "tajmahal"), but the real
+ * environment for that is morphology-sensitive -- ताजमहल is a compound, and
+ * the textbook VC_CV rule applied mechanically deletes the wrong vowel here
+ * ("tajamhal"). A wrong deletion is worse than a missing one, so this stops
+ * at the case that is unambiguous. Genuinely natural Hinglish is better
+ * produced by the LLM path, which can be asked for it directly.
+ */
+function naturalize(itrans: string): string {
+  return itrans
+    // ITRANS marks nasalization with dots/tildes and retroflex+sibilants
+    // with capitals; both are noise to an informal reader. Order matters --
+    // these run before the lowercasing that would erase the distinction.
+    .replace(/\.N|\.n|~N|~n/g, "n")
+    .replace(/M/g, "n")
+    .replace(/R\^i|RR/g, "ri")
+    .replace(/Sh|S/g, "sh")
+    .replace(/chh/g, "ch")
+    .replace(/[TDNRL]/g, (c) => ({ T: "t", D: "d", N: "n", R: "r", L: "l" })[c] ?? c)
+    .replace(/\.h/g, "")
+    // Word-final schwa, BEFORE vowel-length collapse. Order is load-bearing:
+    // collapsing first makes a real long aa ("thaa", था) indistinguishable
+    // from a schwa, and the rule then eats it -> "th". Run against the
+    // uncollapsed form, a final "aa" is visibly not a schwa and survives.
+    .replace(/([bcdfghjklmnpqrstvwxyz])a(?![a-z])/gi, "$1")
+    // Vowel length is not written in informal romanization.
+    .replace(/aa/g, "a")
+    .replace(/ii/g, "i")
+    .replace(/uu/g, "u");
+}
+
 export function romanize(text: string, lang: string): string | null {
   const scheme = SOURCE_SCHEME[lang];
   if (!scheme || !text.trim()) return null;
@@ -69,5 +114,6 @@ export function romanize(text: string, lang: string): string | null {
   // "||" -- not meaningfully "roman" to a reader, swap for the punctuation
   // a Latin-alphabet reader actually expects.
   const punctuated = out.replace(/\|\|/g, ".").replace(/\|/g, ".");
-  return punctuated.replace(LEFTOVER_SOURCE_SCRIPT, "").replace(/ {2,}/g, " ").trim();
+  const cleaned = punctuated.replace(LEFTOVER_SOURCE_SCRIPT, "").replace(/ {2,}/g, " ").trim();
+  return naturalize(cleaned);
 }

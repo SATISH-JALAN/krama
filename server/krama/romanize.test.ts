@@ -12,7 +12,9 @@ describe("romanize", () => {
     const out = romanize("निगम एक कानूनी इकाई है।", "hi");
     expect(out).not.toBeNull();
     expect(out).not.toMatch(DEVANAGARI_RANGE);
-    expect(out).toContain("nigama");
+    // Post-naturalization spelling: the academic form was "nigama", but
+    // word-final schwa is deleted the way a Hinglish reader would write it.
+    expect(out).toContain("nigam");
   });
 
   test("bengali: produces roman-only output", () => {
@@ -39,7 +41,9 @@ describe("romanize", () => {
     const out = romanize("நிறுவனம் என்பது ஒரு சட்ட நிறுவனம்.", "ta");
     expect(out).not.toBeNull();
     expect(out).not.toMatch(TAMIL_RANGE);
-    expect(out).toContain("niRuvanam");
+    // "niRuvanam" was the raw ITRANS form; retroflex capitals are lowered
+    // and the final schwa dropped for readability.
+    expect(out).toContain("niruvanam");
   });
 
   test("english: nothing to romanize, returns null", () => {
