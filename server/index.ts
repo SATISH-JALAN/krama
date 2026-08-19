@@ -24,6 +24,7 @@ import { rrfRanked } from "./jata/fuse";
 import { extractSpan, type ExtractCandidate } from "./krama/extract";
 import { checkL0 } from "./maun/input";
 import { romanize } from "./krama/romanize";
+import { resolveLang } from "./krama/detect_lang";
 import { SafetyGuard, DEFAULT_SAFETY_THRESHOLD } from "./maun/safety";
 import { OodGuard, computeCentroid, DEFAULT_OOD_THRESHOLDS } from "./maun/ood";
 import { checkRerankScore, DEFAULT_MIN_RERANK_SCORE } from "./maun/rerank_guard";
@@ -530,11 +531,17 @@ export function createApp() {
   app.post("/query", async (c) => {
     const body = await c.req.json();
     const parsed = z
-      .object({ text: z.string(), lang: z.string().length(2), queryType: z.string().default("DESCRIPTION") })
+      .object({ text: z.string(), lang: z.string().optional(), queryType: z.string().default("DESCRIPTION") })
       .safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid request" }, 400);
 
-    const result = await handleQuery(parsed.data.text, parsed.data.lang, parsed.data.queryType);
+    const result = await handleQuery(
+      parsed.data.text,
+      // "auto" / omitted -> detect from script, so a typed English query is
+      // not forced through whatever the UI selector happened to be set to.
+      resolveLang(parsed.data.lang, parsed.data.text),
+      parsed.data.queryType,
+    );
     return c.json(result);
   });
 
@@ -574,11 +581,15 @@ export function createApp() {
     }
     const body = await c.req.json();
     const parsed = z
-      .object({ text: z.string(), lang: z.string().length(2), queryType: z.string().default("DESCRIPTION") })
+      .object({ text: z.string(), lang: z.string().optional(), queryType: z.string().default("DESCRIPTION") })
       .safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid request" }, 400);
 
-    const result = await handleSynthesisQuery(parsed.data.text, parsed.data.lang, parsed.data.queryType);
+    const result = await handleSynthesisQuery(
+      parsed.data.text,
+      resolveLang(parsed.data.lang, parsed.data.text),
+      parsed.data.queryType,
+    );
     return c.json(result);
   });
 

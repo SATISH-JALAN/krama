@@ -30,12 +30,17 @@ describe("createApp", () => {
     expect(res.status).toBe(400);
   });
 
-  test("/query rejects a lang code that isn't exactly 2 characters", async () => {
+  // `lang` is no longer schema-rejected when unrecognized: it is optional,
+  // and krama/detect_lang.ts resolves anything it doesn't know (including
+  // "auto") from the query's script. That is what lets a typed English
+  // question route to English regardless of the UI selector. The request
+  // body itself is still validated.
+  test("/query rejects a body missing the required text field", async () => {
     const app = createApp();
     const res = await app.request("/query", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "what is a corporation?", lang: "hindi" }),
+      body: JSON.stringify({ lang: "hi" }),
     });
     expect(res.status).toBe(400);
   });
