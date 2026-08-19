@@ -1,11 +1,25 @@
 /**
  * PLAN.md E5.5 — real guardrail calibration, not placeholder guesses.
- * Embeds 500 real in-domain queries (sampled from data/medium/{hi,bn,ta}.jsonl)
- * and 199 hand-written OOD queries (eval/calibration/ood_queries.jsonl, 6
- * categories per ARCHITECTURE.md §8.2) through the SAME production embed.ts
- * path the server uses, then sweeps L1 (safety) and L2 (OOD) thresholds to
- * find the operating point with <=5% false-refusal rate on in-domain,
- * per ARCHITECTURE.md §8.2.
+ * Embeds 666 real in-domain queries (sampled from data/medium/{hi,bn,ta,en}
+ * — English added alongside the corpus's own English expansion, see
+ * ingest/07_derive_english.py) and 199 hand-written OOD queries
+ * (eval/calibration/ood_queries.jsonl, 6 categories per ARCHITECTURE.md
+ * §8.2) through the SAME production embed.ts path the server uses, then
+ * sweeps L1 (safety) and L2 (OOD) thresholds to find the operating point
+ * with <=5% false-refusal rate on in-domain, per ARCHITECTURE.md §8.2.
+ *
+ * L2's "top retrieval score" (tau_1) is now scoped per-language, matching a
+ * real fix to server/ghana/bruteforce.ts/server/bm25.ts found live-testing
+ * the app: dense/lexical search used to rank across the whole multilingual
+ * corpus at once, so a query could get "grounded" in a passage from the
+ * wrong language entirely (a real bug, not hypothetical -- a Hindi query
+ * came back answered in Tamil). This calibration script had the identical
+ * bug in its own maxDotAgainstCorpus() -- computing topScore against the
+ * WHOLE corpus, not the query's own language -- which is now stale relative
+ * to what the live server actually computes (search a smaller same-language
+ * pool and the max score can only stay the same or drop, never rise), so
+ * simply re-running the old version would have reproduced the same
+ * miscalibrated threshold. Fixed here too, not just in the server.
  *
  * L4/L5 (grounding/NLI) are NOT calibrated here -- both need real LLM-
  * generated answer sentences to check groundedness against, and there is no
@@ -15,10 +29,10 @@
  *
  * L2's "top retrieval score" (tau_1) can't be calibrated against real HNSW
  * either (hnswlib-node won't build on this machine) -- brute-force cosine
- * against the real 59,666 medium-scale passage embeddings stands in, same
- * substitution eval/retrieval_eval.py already uses, and for the same reason
- * (brute-force is an upper bound on what approximate HNSW achieves, so this
- * doesn't overstate real guardrail performance).
+ * against the real (now 79,540, hi/bn/ta/en) passage embeddings stands in,
+ * same substitution eval/retrieval_eval.py already uses, and for the same
+ * reason (brute-force is an upper bound on what approximate HNSW achieves,
+ * so this doesn't overstate real guardrail performance).
  */
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import * as embed from "../server/ghana/embed";
@@ -44,6 +58,40 @@ function loadPassageEmbeddings(path: string, dim: number): Float32Array {
   const arr = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
   if (arr.length % dim !== 0) throw new Error("embeddings file not a multiple of dim");
   return arr;
+}
+
+// Splits the flat corpus embeddings into one contiguous Float32Array per
+// language, matching server/ghana/bruteforce.ts's live behavior (search()
+// scoped to the query's own language, PLAN.md's real fix after voice-testing
+// found a cross-lingual grounding bug). passages_dedup.jsonl's row order
+// must match the embeddings file's row order (both keyed off
+// embeddings_ids.json historically) -- verified by row-count, same
+// discipline as server/index.ts's bootFromDisk().
+function loadPerLangPassages(dedupedPath: string, flatEmbeddings: Float32Array, dim: number): Map<string, Float32Array> {
+  const rows = readFileSync(dedupedPath, "utf-8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { lang: string });
+  if (rows.length !== flatEmbeddings.length / dim) {
+    throw new Error(
+      `${dedupedPath} row count (${rows.length}) doesn't match embeddings row count (${flatEmbeddings.length / dim}) -- rebuild both together`,
+    );
+  }
+
+  const indicesByLang = new Map<string, number[]>();
+  rows.forEach((row, i) => {
+    const list = indicesByLang.get(row.lang) ?? [];
+    list.push(i);
+    indicesByLang.set(row.lang, list);
+  });
+
+  const out = new Map<string, Float32Array>();
+  for (const [lang, indices] of indicesByLang) {
+    const arr = new Float32Array(indices.length * dim);
+    indices.forEach((rowIdx, j) => arr.set(flatEmbeddings.subarray(rowIdx * dim, (rowIdx + 1) * dim), j * dim));
+    out.set(lang, arr);
+  }
+  return out;
 }
 
 // Brute-force max cosine of `q` against every row of `passages` (flat,
@@ -75,7 +123,7 @@ async function scoreQueries(
   rows: QueryRow[],
   category: string,
   exemplarEmb: Float32Array[],
-  passages: Float32Array,
+  perLangPassages: Map<string, Float32Array>,
   centroid: Float32Array,
   dim: number,
 ): Promise<ScoredQuery[]> {
@@ -87,7 +135,12 @@ async function scoreQueries(
       const s = cosineSim(qEmb, ex);
       if (s > maxExemplarSim) maxExemplarSim = s;
     }
-    const topScore = maxDotAgainstCorpus(qEmb, passages, dim);
+    // Same-language-only, matching the live server -- an OOD query in a
+    // language the corpus barely covers should score low because it's
+    // genuinely a weak match within that language, not because it happened
+    // to almost match something written in a different language entirely.
+    const langPassages = perLangPassages.get(row.lang);
+    const topScore = langPassages ? maxDotAgainstCorpus(qEmb, langPassages, dim) : -Infinity;
     const centroidCos = cosineSim(qEmb, centroid);
     out.push({
       lang: row.lang,
@@ -115,8 +168,11 @@ function main() {
     console.log("loading corpus embeddings + centroid...");
     const DIM = 384;
     const passages = loadPassageEmbeddings("data/medium/embeddings.f32bin", DIM);
+    const perLangPassages = loadPerLangPassages("data/medium/passages_dedup.jsonl", passages, DIM);
     const centroid = new Float32Array(JSON.parse(readFileSync("data/medium/centroid.json", "utf-8")));
-    console.log(`  ${passages.length / DIM} passages loaded`);
+    console.log(
+      `  ${passages.length / DIM} passages loaded (${[...perLangPassages.entries()].map(([l, a]) => `${l}=${a.length / DIM}`).join(", ")})`,
+    );
 
     console.log("embedding safety exemplars...");
     const exemplarEmb: Float32Array[] = [];
@@ -127,8 +183,8 @@ function main() {
     console.log(`scoring ${inDomainRows.length} in-domain + ${oodRows.length} OOD queries...`);
 
     const t0 = performance.now();
-    const inDomain = await scoreQueries(inDomainRows, "in_domain", exemplarEmb, passages, centroid, DIM);
-    const ood = await scoreQueries(oodRows, "ood", exemplarEmb, passages, centroid, DIM);
+    const inDomain = await scoreQueries(inDomainRows, "in_domain", exemplarEmb, perLangPassages, centroid, DIM);
+    const ood = await scoreQueries(oodRows, "ood", exemplarEmb, perLangPassages, centroid, DIM);
     console.log(`  done in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 
     // ---------- L1 safety: sweep a single threshold ----------
