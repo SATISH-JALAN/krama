@@ -8,10 +8,13 @@
  * this file exists to close, see MEMORY.md's "RAGINGOA reference analyzed"
  * entry).
  *
- * Query sample: real hi/bn/ta queries from data/medium/{hi,bn,ta}.jsonl
+ * Query sample: real hi/bn/ta/en queries from data/medium/{hi,bn,ta,en}.jsonl
  * (the same medium-scale data server/index.ts boots its corpus from), not
  * synthetic text (CLAUDE.md invariant #6 -- never invent a benchmark
  * number, and that extends to never inventing benchmark *inputs* either).
+ * en.jsonl is derived (ingest/_derive_english_queries.py) from the `eng_query`
+ * field MSMARCO-XI already carries on every hi/bn/ta row -- real original
+ * MS MARCO queries, not synthetic English text.
  *
  * Run: bun run bench (package.json script) or `bun run bench/latency.ts`.
  * Optional: `--n <count>` queries per language (default 100).
@@ -56,8 +59,9 @@ async function main(): Promise<void> {
   console.log(`booting from data/medium/ + artifacts/ ...`);
   await bootFromDisk();
 
-  const queries = [...loadQueries("hi", n), ...loadQueries("bn", n), ...loadQueries("ta", n)];
-  console.log(`running ${queries.length} real queries (${n}/lang x hi/bn/ta) through handleQuery()...`);
+  const LANGS = ["hi", "bn", "ta", "en"];
+  const queries = LANGS.flatMap((lang) => loadQueries(lang, n));
+  console.log(`running ${queries.length} real queries (${n}/lang x ${LANGS.join("/")}) through handleQuery()...`);
 
   const uncachedHistogram = hdr.build({ useWebAssembly: false });
   const cachedHistogram = hdr.build({ useWebAssembly: false });
