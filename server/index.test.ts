@@ -49,6 +49,16 @@ describe("createApp", () => {
     });
     expect(res.status).toBe(503);
   });
+
+  test("/query/synthesize 503s before boot() (no LLM provider configured)", async () => {
+    const app = createApp();
+    const res = await app.request("/query/synthesize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "what is a corporation?", lang: "en" }),
+    });
+    expect(res.status).toBe(503);
+  });
 });
 
 describe("loadThresholds", () => {

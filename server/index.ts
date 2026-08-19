@@ -13,57 +13,95 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 import { readFileSync } from "fs";
 
-import { GroundedAnswer, type Span } from "./harness/contracts";
+import { GroundedAnswer, SynthesisResponse, type Span } from "./harness/contracts";
 import { runStage } from "./harness/pipeline";
 import { SemanticCache } from "./harness/cache";
 import * as embed from "./ghana/embed";
 import * as bruteforce from "./ghana/bruteforce";
+import * as rerank from "./ghana/rerank";
 import { Bm25Index } from "./bm25";
 import { rrfRanked } from "./jata/fuse";
 import { extractSpan, type ExtractCandidate } from "./krama/extract";
 import { checkL0 } from "./maun/input";
+import { romanize } from "./krama/romanize";
 import { SafetyGuard, DEFAULT_SAFETY_THRESHOLD } from "./maun/safety";
 import { OodGuard, computeCentroid, DEFAULT_OOD_THRESHOLDS } from "./maun/ood";
+import { checkRerankScore, DEFAULT_MIN_RERANK_SCORE } from "./maun/rerank_guard";
 import { createSarvamClient, type SarvamClient } from "./stt/sarvam";
+import { CircuitBreaker } from "./harness/breaker";
+import type { RetryOptions } from "./harness/retry";
+import type { LlmProvider } from "./llm/chain";
+import { createGeminiProvider, GEMINI_MODEL_CHAIN } from "./llm/gemini";
+import { createCerebrasProvider } from "./llm/cerebras";
+import { answerFromGeneralKnowledge, synthesizeAnswer } from "./llm/synthesize";
 
 const RETRIEVAL_TOP_K = 10;
+// How many of the RRF-fused top candidates get a real cross-encoder score.
+// Real bench numbers (not the isolated synthetic-text test that first
+// measured ~27ms for 5 candidates): real MS MARCO passages run much closer
+// to the tokenizer's max_length cap than that test's short synthetic
+// sentences did, and 5 candidates at real passage length pushed P90 to
+// 217ms and P100 to 408ms -- a genuine SLA miss, not a rounding error.
+// Cut to 3, matching MAX_RERANK_PAIR_TOKENS's own cut -- see bench/results
+// after this change for the real, re-measured numbers.
+const RERANK_TOP_N = 3;
+// Applies only to the async synthesis path (POST /query/synthesize), never
+// to handleQuery()'s fast path -- CLAUDE.md #4, LLM generation stays outside
+// the t0->t1 core budget entirely, reported (and timed) separately. 30s, not
+// 20s: matches gemini.ts's own widened GENERATE_TIMEOUT_MS (25s), found via
+// live testing where a single real call took up to 19.3s -- a tighter outer
+// deadline left no room for withRetry to ever attempt a second try.
+const LLM_RETRY_OPTS: RetryOptions = { maxAttempts: 2, baseDelayMs: 300, deadlineMs: 30_000 };
 
 interface BootState {
   bm25: Bm25Index;
   safetyGuard: SafetyGuard;
   oodGuard: OodGuard;
+  rerankMinScore: number;
+  rerankerEnabled: boolean;
   cache: SemanticCache<{ text: string; chunkId: string }>;
   passageTextById: Map<string, { text: string; lang: string }>;
   sttClient: SarvamClient | null;
+  llmProviders: LlmProvider[];
+  llmBreakers: Map<string, CircuitBreaker>;
 }
 
 let state: BootState | null = null;
 
-// Shape written by eval/calibrate_guardrails.ts (PLAN.md E5.5). Validated
-// with Zod like every other artifact boundary (ARCHITECTURE.md §7) rather
-// than trusted blindly, since it's read from disk.
+// Shape written by eval/calibrate_guardrails.ts (PLAN.md E5.5) and
+// eval/calibrate_reranker.ts. Validated with Zod like every other artifact
+// boundary (ARCHITECTURE.md §7) rather than trusted blindly, since it's
+// read from disk. rerankMinScore is optional so an older
+// thresholds.json (written before the reranker existed) still loads --
+// missing just means "fall back to the built-in default", not a hard error.
 const ThresholdsArtifact = z.object({
   safetyThreshold: z.number(),
   oodThresholds: z.object({ minTopScore: z.number(), minCentroidCosine: z.number() }),
+  rerankMinScore: z.number().optional(),
 });
 
 export function loadThresholds(thresholdsPath?: string): {
   safetyThreshold: number;
   oodThresholds: { minTopScore: number; minCentroidCosine: number };
+  rerankMinScore: number;
 } {
-  if (!thresholdsPath) {
-    return { safetyThreshold: DEFAULT_SAFETY_THRESHOLD, oodThresholds: DEFAULT_OOD_THRESHOLDS };
-  }
+  const defaults = {
+    safetyThreshold: DEFAULT_SAFETY_THRESHOLD,
+    oodThresholds: DEFAULT_OOD_THRESHOLDS,
+    rerankMinScore: DEFAULT_MIN_RERANK_SCORE,
+  };
+  if (!thresholdsPath) return defaults;
   try {
     const raw = JSON.parse(readFileSync(thresholdsPath, "utf-8"));
-    return ThresholdsArtifact.parse(raw);
+    const parsed = ThresholdsArtifact.parse(raw);
+    return { ...parsed, rerankMinScore: parsed.rerankMinScore ?? DEFAULT_MIN_RERANK_SCORE };
   } catch (e) {
     // A malformed/missing calibration artifact should fall back to the
     // (also real, just less specific) calibrated defaults baked into
     // safety.ts/ood.ts, not crash boot -- but this is surprising enough to
     // be worth a loud log, not a silent swallow.
     console.warn(`could not load thresholds from ${thresholdsPath}, using built-in defaults: ${e}`);
-    return { safetyThreshold: DEFAULT_SAFETY_THRESHOLD, oodThresholds: DEFAULT_OOD_THRESHOLDS };
+    return defaults;
   }
 }
 
@@ -82,7 +120,20 @@ export function loadThresholds(thresholdsPath?: string): {
  * values now, this just lets a redeployed calibration take effect without a
  * code change. `sarvamApiKey` is optional -- when omitted, `/query/voice`
  * (real audio input) is disabled (503s) but the rest of the server, which
- * only needs a transcript string, is unaffected.
+ * only needs a transcript string, is unaffected. `geminiApiKey`/
+ * `cerebrasApiKey` are likewise optional -- when both are omitted,
+ * `/query/synthesize` (the slow LLM-synthesis path, off the t0->t1 core
+ * budget) is disabled (503) but the graded fast path is entirely
+ * unaffected, matching the same degrade-honestly pattern as STT.
+ * `rerankerArtifactDir` is ALSO optional but, unlike the others, its
+ * absence degrades something on the graded fast path itself: without it,
+ * handleQuery() falls back to picking the RRF-fused top result directly
+ * (the pre-reranker behavior), losing the cross-encoder relevance check
+ * that catches an irrelevant top-fused passage before it's returned as
+ * "grounded" -- see maun/rerank_guard.ts's docstring for why that check
+ * exists. Optional only so a server can still boot and answer questions
+ * without ingest/10_export_reranker_onnx.py's artifact present, not
+ * because skipping it is cost-free.
  */
 export async function boot(opts: {
   onnxArtifactDir: string;
@@ -93,9 +144,21 @@ export async function boot(opts: {
   passageEmbeddingsForCentroid: Float32Array[];
   thresholdsPath?: string;
   sarvamApiKey?: string;
+  geminiApiKey?: string;
+  cerebrasApiKey?: string;
+  rerankerArtifactDir?: string;
 }): Promise<void> {
   await embed.boot(opts.onnxArtifactDir);
-  await bruteforce.boot(opts.bruteforceEmbeddingsPath, opts.bruteforceIdsPath);
+  const passageIdToLang = new Map(opts.corpus.map((c) => [c.passageId, c.lang]));
+  await bruteforce.boot(opts.bruteforceEmbeddingsPath, opts.bruteforceIdsPath, passageIdToLang);
+
+  let rerankerEnabled = false;
+  if (opts.rerankerArtifactDir) {
+    await rerank.boot(opts.rerankerArtifactDir, "model_int8.onnx");
+    rerankerEnabled = true;
+  } else {
+    console.warn("no rerankerArtifactDir given -- handleQuery() will skip the cross-encoder relevance gate");
+  }
 
   const bm25 = new Bm25Index();
   bm25.build(opts.corpus.map((c) => ({ id: c.passageId, text: c.text, lang: c.lang })));
@@ -107,13 +170,34 @@ export async function boot(opts: {
   const centroid = computeCentroid(opts.passageEmbeddingsForCentroid);
   const thresholds = loadThresholds(opts.thresholdsPath);
 
+  // Gemini primary, Cerebras secondary (ARCHITECTURE.md §7's fallback-chain
+  // shape, same as the original Groq->Cerebras design -- Gemini takes
+  // Groq's slot per this project's own free-tier-quota comparison, not a
+  // random swap). Either, both, or neither key may be present; an absent
+  // key just means that provider is never in the list, not a boot failure.
+  const llmProviders: LlmProvider[] = [];
+  // One provider entry per Gemini model, not one for "Gemini" -- the free
+  // tier's request cap is per-model, so these are independent budgets that
+  // chain.ts can fall through between (see GEMINI_MODEL_CHAIN's own note).
+  if (opts.geminiApiKey) {
+    for (const model of GEMINI_MODEL_CHAIN) {
+      llmProviders.push(createGeminiProvider(opts.geminiApiKey, { model }));
+    }
+  }
+  if (opts.cerebrasApiKey) llmProviders.push(createCerebrasProvider(opts.cerebrasApiKey));
+  const llmBreakers = new Map(llmProviders.map((p) => [p.name, new CircuitBreaker()]));
+
   state = {
     bm25,
     safetyGuard: new SafetyGuard(opts.safetyExemplarEmbeddings, thresholds.safetyThreshold),
     oodGuard: new OodGuard(centroid, thresholds.oodThresholds),
+    rerankMinScore: thresholds.rerankMinScore,
+    rerankerEnabled,
     cache: new SemanticCache(),
     passageTextById,
     sttClient: opts.sarvamApiKey ? createSarvamClient(opts.sarvamApiKey) : null,
+    llmProviders,
+    llmBreakers,
   };
 }
 
@@ -179,6 +263,7 @@ export async function handleQuery(
       refused: false,
       trace,
       cached: true,
+      answerRomanized: romanize(cacheHit.value.text, lang) ?? undefined,
     };
   }
 
@@ -186,7 +271,12 @@ export async function handleQuery(
     "dense_search",
     queryEmbedding,
     z.any(),
-    async (qEmb) => bruteforce.search(qEmb, RETRIEVAL_TOP_K),
+    // Scoped to the query's own language -- without this, dense search
+    // ranks across the whole multilingual corpus at once and can "ground"
+    // an answer in a passage the user never asked for and can't read (a
+    // real bug found by voice-testing: a Hindi query returning a Tamil
+    // passage as its answer).
+    async (qEmb) => bruteforce.search(qEmb, RETRIEVAL_TOP_K, lang),
     trace,
   );
 
@@ -231,21 +321,172 @@ export async function handleQuery(
   // sentence candidates with embeddings, which requires the full corpus's
   // sentence-level artifacts (analogous to the bake-off's chunks_DE), not
   // yet built for the production corpus.
-  const topFused = fused[0];
-  if (!topFused) {
+  if (fused.length === 0) {
     return { answer: "", citations: [], confidence: 0, refused: true, refusalReason: "no_grounding", trace };
   }
-  const topPassage = state.passageTextById.get(topFused.id);
-  const answerText = topPassage?.text ?? "";
 
-  state.cache.set(queryEmbedding, { text: answerText, chunkId: topFused.id });
+  // L3: cross-encoder relevance gate (maun/rerank_guard.ts). Re-scores the
+  // top RERANK_TOP_N fused candidates by actually attending over
+  // (query, passage) jointly, instead of trusting RRF rank order alone --
+  // RRF rank can put a passage first that a real relevance judge would
+  // reject outright (found live: a Taj Mahal query "grounded" in an
+  // unrelated video-game-character passage). Falls back to the pre-reranker
+  // behavior (trust fused[0]) if the reranker artifact wasn't booted.
+  let bestId = fused[0]!.id;
+  let bestScore = fused[0]!.score;
+  if (state.rerankerEnabled) {
+    const candidates = fused.slice(0, RERANK_TOP_N);
+    const candidateTexts = candidates.map((c) => state!.passageTextById.get(c.id)?.text ?? "");
+    const rerankScores = await runStage(
+      "rerank",
+      candidateTexts,
+      z.any(),
+      async (texts) => rerank.scoreBatch(transcriptText, texts),
+      trace,
+    );
+    let bestIdx = 0;
+    for (let i = 1; i < rerankScores.length; i++) {
+      if (rerankScores[i]! > rerankScores[bestIdx]!) bestIdx = i;
+    }
+    bestId = candidates[bestIdx]!.id;
+    bestScore = rerankScores[bestIdx]!;
+
+    const l3 = checkRerankScore(bestScore, state.rerankMinScore);
+    if (l3.refused) {
+      trace.push({ name: "l3_rerank_guard", ms: 0, ok: false, err: l3.detail });
+      return { answer: "", citations: [], confidence: 0, refused: true, refusalReason: "off_topic", trace };
+    }
+  }
+
+  const topPassage = state.passageTextById.get(bestId);
+  const answerText = topPassage?.text ?? "";
+  // Cross-encoder logits are unbounded, not a 0-1 score like the bi-encoder
+  // cosine/RRF-derived confidence was -- squash with a sigmoid so
+  // `confidence` stays interpretable as "how sure", not a raw classifier
+  // logit that can read as >1 or wildly negative in the API response.
+  const confidence = state.rerankerEnabled ? 1 / (1 + Math.exp(-bestScore)) : Math.min(1, bestScore);
+
+  state.cache.set(queryEmbedding, { text: answerText, chunkId: bestId });
 
   return {
     answer: answerText,
-    citations: [topFused.id],
-    confidence: Math.min(1, topFused.score),
+    citations: [bestId],
+    confidence,
     refused: false,
     trace,
+    answerRomanized: romanize(answerText, lang) ?? undefined,
+  };
+}
+
+/**
+ * Slow, async synthesis path (POST /query/synthesize) -- entirely off the
+ * t0->t1 core budget `bench/latency.ts` measures (CLAUDE.md #4), and the
+ * frontend calls it as a genuinely separate request after the fast path's
+ * answer already landed, not inline with it. Reuses handleQuery() itself
+ * rather than re-deriving retrieval, which has two real effects, both
+ * intentional: (1) guardrails apply identically to both paths -- a query
+ * L0/L1/L2 already refused never reaches an LLM either, so this can't
+ * become a way to route unsafe input around the guardrails; (2) it costs
+ * one redundant retrieval pass (~50-70ms) per call, which is irrelevant
+ * next to LLM round-trip latency (hundreds of ms to seconds) and far
+ * simpler than threading retrieval results between two separate endpoints.
+ *
+ * The candidate passed to synthesizeAnswer() is the SAME single top-fused
+ * passage the fast path already selected, not a fresh multi-candidate
+ * retrieval -- a deliberate scope decision (richer multi-passage synthesis
+ * context is a real future enhancement, not attempted here) that keeps
+ * this addition small and lets the LLM's actual job stay narrow: rewrite
+ * that one passage more naturally, or recognize it doesn't answer the
+ * question and decline (llm/synthesize.ts's prompt already instructs the
+ * latter) -- exactly the guardrail gap real-world testing found (README's
+ * documented "low lexical/semantic separation between a good match and a
+ * degenerate/repetitive corpus passage" weakness).
+ */
+export async function handleSynthesisQuery(
+  transcriptText: string,
+  lang: string,
+  queryType: string,
+): Promise<z.infer<typeof SynthesisResponse>> {
+  if (!state) throw new Error("index.boot() must be called before handleSynthesisQuery()");
+
+  const fast = await handleQuery(transcriptText, lang, queryType);
+
+  if (state.llmProviders.length === 0) {
+    throw new Error("no LLM provider configured -- boot() was not given a geminiApiKey or cerebrasApiKey");
+  }
+
+  if (fast.refused) {
+    // Retrieval declined -- but "the corpus has nothing on this" is not the
+    // same as "this question has no answer", and dead-ending here was a real
+    // usability complaint. The corpus is an MS MARCO web-passage subset, so
+    // plenty of ordinary questions ("who built the Taj Mahal") genuinely have
+    // zero matching passages; refusing them is correct retrieval behaviour and
+    // still an unhelpful product.
+    //
+    // Two things keep this from becoming the reference implementation's
+    // failure (serving an unrelated passage as "GROUNDED"): the answer is
+    // generated from the model's own knowledge rather than from a passage
+    // that already failed the relevance gate, and it is returned with
+    // grounded=false and refused=true so it can never be mistaken for one
+    // that passed maun/. L0/L1 refusals are deliberately NOT routed here --
+    // gibberish and unsafe input should stay refused outright, not be handed
+    // to an LLM.
+    const eligible = fast.refusalReason === "off_topic" || fast.refusalReason === "no_grounding";
+    if (!eligible) {
+      return { refused: true, refusalReason: fast.refusalReason, synthesized: null };
+    }
+
+    const general = await answerFromGeneralKnowledge(
+      transcriptText,
+      lang,
+      state.llmProviders,
+      state.llmBreakers,
+      LLM_RETRY_OPTS,
+    );
+    if (!general) {
+      return { refused: true, refusalReason: fast.refusalReason, synthesized: null };
+    }
+    return {
+      refused: true,
+      refusalReason: fast.refusalReason,
+      synthesized: {
+        answer: general.answer,
+        streaming: false,
+        declined: false,
+        provider: general.provider,
+        citedChunkIds: [],
+        grounded: false,
+      },
+    };
+  }
+
+  const candidate = { chunkId: fast.citations[0]!, text: fast.answer };
+  const result = await synthesizeAnswer(
+    [candidate],
+    transcriptText,
+    lang,
+    state.llmProviders,
+    state.llmBreakers,
+    LLM_RETRY_OPTS,
+  );
+
+  if (!result) {
+    // Every provider failed outright (network/quota/timeout), not "declined
+    // to answer" -- distinct from the LLM successfully judging the passage
+    // ungrounded (that returns a real result with an empty `answer` below).
+    return { refused: false, synthesized: null };
+  }
+
+  return {
+    refused: false,
+    synthesized: {
+      answer: result.answer,
+      streaming: false,
+      declined: result.answer.trim().length === 0,
+      provider: result.provider,
+      citedChunkIds: result.citedChunkIds,
+      grounded: true,
+    },
   };
 }
 
@@ -323,6 +564,24 @@ export function createApp() {
     return c.json(result);
   });
 
+  // Slow path, deliberately separate from /query -- see handleSynthesisQuery's
+  // own docstring for why. The frontend calls this after /query's answer
+  // already landed; a client that never calls it (or this route being 503'd
+  // with no key configured) leaves the fast path completely unaffected.
+  app.post("/query/synthesize", async (c) => {
+    if (!state || state.llmProviders.length === 0) {
+      return c.json({ error: "no LLM provider configured on this server" }, 503);
+    }
+    const body = await c.req.json();
+    const parsed = z
+      .object({ text: z.string(), lang: z.string().length(2), queryType: z.string().default("DESCRIPTION") })
+      .safeParse(body);
+    if (!parsed.success) return c.json({ error: "invalid request" }, 400);
+
+    const result = await handleSynthesisQuery(parsed.data.text, parsed.data.lang, parsed.data.queryType);
+    return c.json(result);
+  });
+
   return app;
 }
 
@@ -338,10 +597,12 @@ export async function bootFromDisk(opts?: {
   dataDir?: string;
   onnxArtifactDir?: string;
   thresholdsPath?: string;
+  rerankerArtifactDir?: string;
 }): Promise<void> {
   const dataDir = opts?.dataDir ?? "data/medium";
   const onnxArtifactDir = opts?.onnxArtifactDir ?? "artifacts/onnx";
   const thresholdsPath = opts?.thresholdsPath ?? "artifacts/thresholds.json";
+  const rerankerArtifactDir = opts?.rerankerArtifactDir ?? "artifacts/onnx_reranker";
   const DIM = 384;
 
   const corpus = readFileSync(`${dataDir}/passages_dedup.jsonl`, "utf-8")
@@ -388,9 +649,14 @@ export async function bootFromDisk(opts?: {
     safetyExemplarEmbeddings,
     passageEmbeddingsForCentroid,
     thresholdsPath,
-    // Bun loads .env automatically -- SARVAM_API_KEY isn't required to boot
-    // (see boot()'s own docstring), only to serve /query/voice.
+    rerankerArtifactDir,
+    // Bun loads .env automatically -- none of these three are required to
+    // boot (see boot()'s own docstring); SARVAM_API_KEY only gates
+    // /query/voice, GEMINI_API_KEY/CEREBRAS_API_KEY only gate
+    // /query/synthesize.
     sarvamApiKey: process.env.SARVAM_API_KEY,
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    cerebrasApiKey: process.env.CEREBRAS_API_KEY,
   });
 }
 
