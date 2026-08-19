@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseLlmJson, synthesizeAnswer } from "./synthesize";
+import { answerFromGeneralKnowledge, parseLlmJson, synthesizeAnswer } from "./synthesize";
 import type { LlmProvider } from "./chain";
 
 const CANDIDATES = [
@@ -101,5 +101,66 @@ describe("synthesizeAnswer", () => {
     const result = await synthesizeAnswer(CANDIDATES, "unrelated question", "en", [provider], new Map(), RETRY_OPTS);
     expect(result?.answer).toBe("");
     expect(result?.citedChunkIds).toEqual([]);
+  });
+});
+
+describe("answerFromGeneralKnowledge", () => {
+  test("returns the model's plain text, with no citations", async () => {
+    const r = await answerFromGeneralKnowledge(
+      "ताज महल किसने बनाया",
+      "hi",
+      [providerReturning("ताज महल शाहजहाँ ने बनवाया था।")],
+      new Map(),
+      RETRY_OPTS,
+    );
+    expect(r).not.toBeNull();
+    expect(r!.answer).toBe("ताज महल शाहजहाँ ने बनवाया था।");
+    // Nothing was retrieved, so there is nothing legitimate to cite -- an id
+    // here would be the model inventing one, which is exactly what the
+    // grounded path's validateAgainstCandidates() exists to reject.
+    expect(r!.citedChunkIds).toEqual([]);
+  });
+
+  test("takes prose -- output that would fail the grounded path's JSON contract is valid here", async () => {
+    const r = await answerFromGeneralKnowledge(
+      "what is the capital of India",
+      "en",
+      [providerReturning("New Delhi is the capital of India.")],
+      new Map(),
+      RETRY_OPTS,
+    );
+    expect(r?.answer).toBe("New Delhi is the capital of India.");
+  });
+
+  test("strips a code fence the model adds anyway", async () => {
+    const r = await answerFromGeneralKnowledge(
+      "q",
+      "en",
+      [providerReturning("```\nNew Delhi.\n```")],
+      new Map(),
+      RETRY_OPTS,
+    );
+    expect(r?.answer).toBe("New Delhi.");
+  });
+
+  test("returns null on empty output, so the caller degrades to the plain refusal", async () => {
+    const r = await answerFromGeneralKnowledge("q", "en", [providerReturning("   ")], new Map(), RETRY_OPTS);
+    expect(r).toBeNull();
+  });
+
+  test("names the language and asks for a spoken register, rather than passing a bare ISO code", async () => {
+    let seenPrompt = "";
+    const spy: LlmProvider = {
+      name: "spy",
+      generate: async (prompt: string) => {
+        seenPrompt = prompt;
+        return "ok";
+      },
+    };
+    await answerFromGeneralKnowledge("q", "bn", [spy], new Map(), RETRY_OPTS);
+    expect(seenPrompt).toContain("Bengali");
+    // The register instruction is the fix for real user-reported unreadable
+    // formal output -- regression-guard it rather than trusting the prose.
+    expect(seenPrompt).toContain("everyday conversation");
   });
 });

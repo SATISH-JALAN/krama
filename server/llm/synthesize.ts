@@ -43,6 +43,87 @@ ${context}
 Question: ${query}`;
 }
 
+// Language names the model actually recognizes -- passing a bare ISO code
+// ("bn") into a natural-language instruction is much weaker steering than
+// naming the language, and register instructions below need the model to be
+// confident about which language it's writing.
+const LANG_NAMES: Record<string, string> = {
+  hi: "Hindi",
+  bn: "Bengali",
+  ta: "Tamil",
+  en: "English",
+};
+
+/**
+ * The ungrounded path's prompt. Deliberately NOT the JSON/citation shape
+ * buildPrompt() uses: there are no passages here, so there is nothing to
+ * cite, and demanding a citation array the model cannot legitimately fill
+ * is how you teach it to invent ids.
+ *
+ * The register instructions are the fix for a real, user-reported problem:
+ * the extractive path can only ever return the corpus's own wording, which
+ * for MS MARCO-XI is stiff machine-translated prose ("pure Hindi which
+ * rarely people knows about", in the report). Here the wording is ours to
+ * choose, so it asks explicitly for the everyday spoken register -- the
+ * common English loanwords Indian speakers actually use out loud, rather
+ * than the Sanskritised formal equivalents a model defaults to when it is
+ * told only "answer in Hindi".
+ */
+function buildGeneralKnowledgePrompt(query: string, lang: string): string {
+  const langName = LANG_NAMES[lang] ?? lang;
+  return `Answer the question below from your own general knowledge, in ${langName}.
+
+Rules:
+- Write the way people actually speak ${langName} in everyday conversation, NOT in a formal, literary, or textbook register. Keep the common English loanwords that ordinary speakers use out loud instead of substituting rare formal equivalents.
+- Keep it to 2-3 short sentences. Be direct: answer the question first, then at most one sentence of context.
+- If you are genuinely unsure of the answer, say so plainly in ${langName} rather than guessing.
+- Output ONLY the answer text itself. No preamble, no JSON, no markdown, no quotes around it.
+
+Question: ${query}`;
+}
+
+/**
+ * Answers WITHOUT corpus grounding, from the model's own knowledge.
+ *
+ * Exists because a refusal used to be a dead end: real testing found the
+ * corpus simply has no passage on many perfectly reasonable questions (it
+ * is an MS MARCO web-passage subset, not an encyclopedia -- "who built the
+ * Taj Mahal" has zero matching passages in all 79,540), so the honest
+ * retrieval answer is "I can't", which is correct but useless to a user.
+ *
+ * Routing those to this function is what makes it safe to TIGHTEN the L3
+ * relevance gate rather than loosen it. The alternative -- relaxing
+ * thresholds until something always comes back -- is exactly how the
+ * reference implementation ends up serving an unrelated passage under a
+ * "GROUNDED ANSWER / HALLUCINATION UNDETECTED" banner. The caller MUST
+ * surface the resulting answer as ungrounded (SynthesizedAnswer.grounded =
+ * false); an answer from here carries no citations and has not passed any
+ * grounding check, and presenting it as if it had is the precise failure
+ * this whole module exists to avoid.
+ *
+ * Returns null if every provider failed (network/quota/timeout) -- callers
+ * degrade to the plain refusal, same convention as synthesizeAnswer().
+ */
+export async function answerFromGeneralKnowledge(
+  query: string,
+  lang: string,
+  providers: LlmProvider[],
+  breakers: Map<string, CircuitBreaker>,
+  retryOpts: RetryOptions,
+): Promise<SynthesisResult | null> {
+  const prompt = buildGeneralKnowledgePrompt(query, lang);
+  const result = await generateWithFallback(providers, breakers, prompt, retryOpts);
+  if (!result.text) return null;
+
+  // Plain text, so there is no JSON contract to validate or repair -- the
+  // only cleanup needed is stripping a code fence the model may have added
+  // anyway (same defensive reason stripCodeFence() exists for the JSON path).
+  const answer = stripCodeFence(result.text).trim();
+  if (answer.length === 0) return null;
+
+  return { answer, citedChunkIds: [], provider: result.provider };
+}
+
 function buildRepairPrompt(originalPrompt: string, badOutput: string, error: string): string {
   return `${originalPrompt}
 
