@@ -58,6 +58,52 @@
   background: var(--signal);
 }
 
+.latency-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  color: var(--paper-dim);
+}
+
+.latency-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--paper-dim);
+}
+
+.latency-badge.ok {
+  color: var(--verified);
+  border-color: var(--verified-dim);
+}
+
+.latency-badge.ok .latency-dot {
+  background: var(--verified);
+}
+
+.latency-badge.over {
+  color: var(--refused);
+  border-color: var(--refused-dim);
+}
+
+.latency-badge.over .latency-dot {
+  background: var(--refused);
+}
+
+.latency-cached {
+  margin-left: 4px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--signal);
+}
+
 @media (max-width: 640px) {
   .header-tagline {
     display: none;

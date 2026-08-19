@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import type { Span } from "../lib/contracts";
-import { moduleForSpan } from "../lib/contracts";
+import { moduleForSpan, totalTraceMs } from "../lib/contracts";
 import "./Waterfall.css";
 
 interface Props {
@@ -24,7 +24,7 @@ export default function Waterfall({ trace }: Props) {
   }
 
   const maxMs = Math.max(...trace.map((s) => s.ms), 1);
-  const totalMs = trace.reduce((sum, s) => sum + s.ms, 0);
+  const totalMs = totalTraceMs(trace) ?? 0;
 
   return (
     <div className="waterfall">
