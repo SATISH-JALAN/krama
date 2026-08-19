@@ -38,9 +38,15 @@ export async function generateWithFallback(
       const text = await withRetry(() => provider.generate(prompt), retryOpts);
       breaker?.onSuccess();
       return { text, provider: provider.name };
-    } catch {
+    } catch (e) {
       breaker?.onFailure();
-      // fall through to the next provider
+      // A provider failure here used to be completely silent -- surprising
+      // enough (and hard enough to debug blind, found the hard way while
+      // diagnosing gemini.ts's real thinking-timeout bug) to warrant a loud
+      // log, same "recoverable but worth knowing about" pattern as
+      // index.ts's loadThresholds(). Still falls through to the next
+      // provider, not fatal.
+      console.warn(`llm provider "${provider.name}" failed, falling through: ${e instanceof Error ? e.message : e}`);
     }
   }
 
