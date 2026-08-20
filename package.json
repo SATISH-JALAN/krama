@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run --hot server/index.ts",
     "test": "bun test",
-    "bench": "bun run bench/latency.ts"
+    "bench": "bun run bench/latency.ts",
+    "bench:synthesis": "bun run bench/synthesis.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
