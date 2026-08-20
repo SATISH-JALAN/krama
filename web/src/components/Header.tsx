@@ -15,8 +15,28 @@ export default function Header({ lang, onLangChange, source, latencyMs, cached }
   return (
     <header className="header">
       <div className="header-brand">
-        <span className="header-wordmark mono">KRAMA</span>
-        <span className="header-tagline">voice → grounded answer, &lt;200ms core</span>
+        {/* Co-branded lockup, both arms at the same optical height: the real
+            HH Goa stacked wordmark (their own asset, with the गोवा sticker
+            sitting over it exactly as on hhgoa.com) beside this project's. */}
+        <div className="brand-lockup">
+          <a
+            className="brand-hh"
+            href="https://hhgoa.com"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Hacker House Goa 2026"
+          >
+            <img className="brand-hh-mark" src="/brand/hackerhouse-wordmark.svg" alt="Hacker House" />
+            <img className="brand-hh-sticker" src="/brand/goa-sticker.svg" alt="" aria-hidden />
+          </a>
+          <span className="brand-x" aria-hidden>
+            ×
+          </span>
+          <span className="brand-krama">KRAMA</span>
+        </div>
+        <p className="header-tagline mono">
+          GOA, INDIA · 28–31 OCT 2026 · VOICE → GROUNDED ANSWER, &lt;200MS CORE
+        </p>
       </div>
       <div className="header-controls">
         <LatencyBadge ms={latencyMs} cached={cached} />

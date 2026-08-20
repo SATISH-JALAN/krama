@@ -3,7 +3,7 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
   width: 100%;
-  max-width: 900px;
+  max-width: 920px;
 }
 
 @media (max-width: 720px) {
@@ -12,19 +12,31 @@
   }
 }
 
+/* Every answer is a hanging signboard: cream panel, hard keyline, drop
+   shadow, and a coloured rail across the top that says which KIND of answer
+   it is. Yellow = grounded, amber = unverified, pink = refused. The cream
+   fill is also what makes Devanagari/Bengali/Tamil answer copy legible --
+   dark type on cream is 10:1, the same copy on green was not. */
 .answer-card {
-  background: var(--ink-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  background: var(--board);
+  color: var(--board-ink);
+  border: 2px solid var(--line-strong);
+  border-top: 8px solid var(--line-strong);
+  box-shadow: 5px 5px 0 rgba(8, 48, 28, 0.45);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  min-height: 96px;
+  min-height: 88px;
+}
+
+.answer-card .eyebrow {
+  color: var(--board-ink);
+  opacity: 0.7;
 }
 
 .answer-card.ready:first-child {
-  border-color: var(--verified-dim);
+  border-top-color: var(--verified);
 }
 
 /* One card, not the two-up grounded/synthesized pair -- there is no grounded
@@ -34,24 +46,17 @@
   margin-top: var(--space-3);
 }
 
-/* Deliberately amber, never the verified green: this answer has no passage
+/* Deliberately amber, never the grounded yellow: this answer has no passage
    behind it, and the whole point of showing it is that a user can tell that
-   at a glance. The :first-child rule above would otherwise paint it green. */
+   at a glance. The :first-child rule above would otherwise paint it yellow. */
 .answer-card.ungrounded,
 .answer-card.ungrounded.ready:first-child {
-  border-color: var(--signal-dim);
+  border-top-color: var(--signal);
 }
 
 .answer-card.ungrounded .eyebrow {
-  color: var(--signal);
-}
-
-.answer-ungrounded-note {
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--paper-dim);
-  border-left: 2px solid var(--signal-dim);
-  padding-left: var(--space-2);
+  color: var(--signal-text);
+  opacity: 1;
 }
 
 .answer-text {
@@ -62,24 +67,25 @@
 .answer-romanized {
   font-size: 0.8rem;
   line-height: 1.5;
-  color: var(--paper-dim);
-  border-left: 2px solid var(--line);
+  color: #4a6b57;
+  border-left: 3px solid var(--line-strong);
   padding-left: var(--space-2);
 }
 
 .answer-romanized-label {
   display: block;
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--signal-dim);
+  letter-spacing: 0.14em;
+  color: var(--signal-text);
   margin-bottom: 2px;
 }
 
 .answer-unavailable {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--paper-dim);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #4a6b57;
 }
 
 .answer-meta {
@@ -88,23 +94,31 @@
   justify-content: space-between;
   gap: var(--space-2);
   margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px dashed rgba(8, 48, 28, 0.3);
 }
 
 .confidence {
-  font-size: 0.7rem;
-  color: var(--paper-dim);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4a6b57;
 }
 
 .answer-declined {
   font-size: 0.85rem;
   line-height: 1.5;
-  color: var(--refused);
+  color: var(--refused-text);
 }
 
 .answer-skeleton {
   height: 3.2em;
-  border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--line) 25%, var(--ink) 50%, var(--line) 75%);
+  background: linear-gradient(
+    90deg,
+    rgba(8, 48, 28, 0.08) 25%,
+    rgba(8, 48, 28, 0.18) 50%,
+    rgba(8, 48, 28, 0.08) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
@@ -118,16 +132,22 @@
   }
 }
 
+/* The refusal notice itself stays on the green ground, marked by a pink rail
+   rather than pink type (#ff0080 is 1.9:1 on green -- unreadable as text). */
 .answer-refused {
-  max-width: 640px;
-  border: 1px solid var(--refused-dim);
-  border-radius: var(--radius);
+  width: 100%;
+  max-width: 920px;
+  background: var(--hh-green-raised);
+  border: 2px solid var(--line-strong);
+  border-left: 10px solid var(--refused);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  color: var(--paper);
 }
 
 .refused-eyebrow {
-  color: var(--refused);
+  color: var(--hh-cream);
+  font-weight: 700;
 }

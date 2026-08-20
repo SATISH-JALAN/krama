@@ -5,11 +5,19 @@
   flex-wrap: wrap;
 }
 
+.citations .eyebrow {
+  color: var(--board-ink);
+  opacity: 0.7;
+}
+
+/* Cited chunk ids sit on the cream board, so the chip is a yellow sign with
+   the keyline every HH shape carries -- not a tinted-transparent pill. */
 .citation-chip {
-  font-size: 0.7rem;
-  color: var(--verified);
-  background: color-mix(in srgb, var(--verified) 10%, transparent);
-  border: 1px solid var(--verified-dim);
-  border-radius: var(--radius);
-  padding: 1px var(--space-1);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--hh-outline);
+  background: var(--verified);
+  border: 2px solid var(--line-strong);
+  padding: 1px var(--space-2);
 }

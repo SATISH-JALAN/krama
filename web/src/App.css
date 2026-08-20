@@ -9,13 +9,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-6) var(--space-4);
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4);
 }
 
 @media (max-width: 640px) {
   .stage {
-    padding: var(--space-5) var(--space-3);
-    gap: var(--space-4);
+    padding: var(--space-4) var(--space-3);
+    gap: var(--space-3);
   }
 }

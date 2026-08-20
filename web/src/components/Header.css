@@ -1,29 +1,87 @@
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--line);
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-3);
   flex-wrap: wrap;
+  position: relative;
+}
+
+/* The woven ribbon that edges every framed element on hhgoa.com, used here
+   as the nav rule instead of a plain hairline. */
+.header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--hh-yellow) 0 4px,
+    var(--hh-pink) 4px 8px
+  );
 }
 
 .header-brand {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
   gap: var(--space-3);
 }
 
-.header-wordmark {
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  color: var(--paper);
+.brand-hh {
+  position: relative;
+  display: block;
+  height: clamp(58px, 7.5vw, 84px);
+  line-height: 0;
+}
+
+.brand-hh-mark {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+
+/* Sits over the middle of the stacked wordmark, exactly as on their site. */
+.brand-hh-sticker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 58%;
+  width: auto;
+  transform: translate(-50%, -50%) rotate(-3deg);
+  filter: drop-shadow(2px 2px 0 rgba(8, 48, 28, 0.55));
+  pointer-events: none;
+}
+
+.brand-x {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--paper-dim);
+}
+
+.brand-krama {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(34px, 4.8vw, 52px);
+  line-height: 0.9;
+  letter-spacing: 0.01em;
+  color: var(--hh-yellow);
+  /* Same hard offset shadow the HACKER HOUSE mark carries. */
+  text-shadow: 2px 2px 0 var(--hh-outline);
 }
 
 .header-tagline {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--paper-dim);
 }
 
@@ -31,22 +89,23 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  padding-bottom: var(--space-1);
 }
 
 .source-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
   color: var(--paper-dim);
   text-transform: uppercase;
 }
 
 .source-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--hh-outline);
   background: var(--paper-dim);
 }
 
@@ -58,38 +117,41 @@
   background: var(--signal);
 }
 
+/* A little signboard, like the yellow/pink direction signs in details.png. */
 .latency-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 2px var(--space-2);
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px var(--space-2);
+  background: var(--hh-green-raised);
   color: var(--paper-dim);
+  border: 2px solid var(--line-strong);
 }
 
 .latency-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 7px;
+  height: 7px;
   background: var(--paper-dim);
 }
 
 .latency-badge.ok {
-  color: var(--verified);
-  border-color: var(--verified-dim);
+  background: var(--verified);
+  color: var(--hh-outline);
 }
 
 .latency-badge.ok .latency-dot {
-  background: var(--verified);
+  background: var(--hh-outline);
 }
 
+/* Over budget: pink is the alarm, but as a rail + fill behind dark type --
+   #ff0080 under small cream text is only 3.7:1. */
 .latency-badge.over {
-  color: var(--refused);
-  border-color: var(--refused-dim);
+  background: var(--board);
+  color: var(--refused-text);
+  border-left: 6px solid var(--refused);
 }
 
 .latency-badge.over .latency-dot {
@@ -98,14 +160,24 @@
 
 .latency-cached {
   margin-left: 4px;
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--signal);
+  letter-spacing: 0.08em;
+  color: inherit;
+  opacity: 0.75;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
+  .header {
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
   .header-tagline {
     display: none;
+  }
+
+  .brand-krama {
+    font-size: clamp(28px, 8vw, 40px);
   }
 }

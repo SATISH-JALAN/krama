@@ -1,27 +1,68 @@
 :root {
-  /* Color — a functional three-color system, not decoration:
-     signal = the one active/primary accent, verified = grounded-only states,
-     refused = guardrail-refusal-only states. Never mix their jobs. */
-  --ink: #0b0d0c;
-  --ink-raised: #141613;
-  --paper: #ede9e0;
-  --paper-dim: #a8a49a;
-  --line: #2a2e2b;
-  --signal: #ff7a33;
-  --signal-dim: #7a3d1c;
-  --verified: #6ee7b0;
-  --verified-dim: #2e5544;
-  --refused: #ff5d5d;
-  --refused-dim: #5c2626;
+  /* ---------------------------------------------------------------------
+     Brand — literal HH Goa 2026 values, sampled from the real site's own
+     assets (public/assests/*.svg fills, public/1.png + 3.png pixels), not
+     eyeballed from a screenshot. Never hand-tune these; everything below
+     derives from them.
+     --------------------------------------------------------------------- */
+  --hh-green: #036735;
+  --hh-green-raised: #05743b;
+  --hh-green-deep: #024e28;
+  --hh-yellow: #fee101;
+  --hh-pink: #ff0080;
+  --hh-amber: #f0a81e;
+  --hh-cream: #fffdf0;
+  --hh-outline: #08301c;
 
-  /* Type — mono for UI chrome/data/numbers (always Latin/numeric), a real
-     Indic-coverage sans stack for actual transcript/answer content, which is
-     frequently Devanagari/Bengali/Tamil and cannot rely on a display face. */
-  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  /* Contrast-safe text variants. #ff0080 is 3.7:1 on cream and 1.86:1 on
+     green -- unusable as small text either way -- so the brand pink is a
+     FILL/RAIL only and any pink *word* uses --refused-text instead (5.05:1
+     on cream). Same story for amber: --signal-text (5.8:1) carries the
+     "unverified" wording, --signal paints the rail. */
+  --refused-text: #d6006b;
+  --signal-text: #8a5a00;
+
+  /* ---------------------------------------------------------------------
+     Semantic — a functional colour system, not decoration. HH ships three
+     accents, and "grounded" and "interactive" both land on yellow, so they
+     are separated by FORM, not hue:
+       grounded    = cream-filled signboard + yellow rail
+       interactive = yellow fill, dark-green text (their APPLY button)
+       unverified  = amber rail, never yellow
+       refused     = pink rail/fill, never yellow
+     Never mix those jobs.
+     --------------------------------------------------------------------- */
+  --ink: var(--hh-green); /* page ground */
+  --ink-raised: var(--hh-green-raised); /* raised surface still on green */
+  --board: var(--hh-cream); /* signboard fill — where answer copy lives */
+  --board-ink: #0b4a28; /* text on a board, 10.2:1 on cream */
+  --paper: var(--hh-cream); /* primary text on green, 6.9:1 */
+  --paper-dim: #b9dcc6; /* muted text on green, 4.7:1 — do not lighten */
+  --line: rgba(255, 253, 240, 0.24); /* hairline on green */
+  --line-strong: var(--hh-outline); /* the keyline every HH illustration has */
+
+  --signal: var(--hh-amber); /* attention / UNVERIFIED only */
+  --interactive: var(--hh-yellow); /* active + clickable */
+  --verified: var(--hh-yellow); /* grounded */
+  --refused: var(--hh-pink);
+
+  /* Kept as aliases: several components still reference the dim variants. */
+  --signal-dim: #b07d16;
+  --verified-dim: #b9a300;
+  --refused-dim: #b00056;
+
+  /* Type — display didone for the wordmarks and nothing else; mono for all
+     UI chrome/data/numbers (always Latin/numeric); a real Indic-coverage
+     sans for actual transcript/answer content, which is frequently
+     Devanagari/Bengali/Tamil. Bodoni Moda and Space Mono have ZERO Indic
+     coverage — --font-content must never be replaced by either. */
+  --font-display: "Bodoni Moda", "Playfair Display", Didot, "Times New Roman", serif;
+  --font-mono: "Space Mono", "IBM Plex Mono", ui-monospace, "Cascadia Code", monospace;
   --font-content: "Noto Sans", "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Tamil", system-ui,
     -apple-system, sans-serif;
 
-  --radius: 3px;
+  /* Nothing in this brand is rounded except stickers and the sun. */
+  --radius: 0px;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 1rem;

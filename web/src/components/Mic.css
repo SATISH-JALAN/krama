@@ -2,14 +2,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
+/* The sun from their beach illustration (public/2.png): a solid yellow disc
+   with straight rays radiating out of it. The rays are the mic level meter --
+   they widen as you speak, driven by --level from Mic.tsx. */
 .mic-ring {
   --level: 0;
   position: relative;
-  width: 128px;
-  height: 128px;
+  width: 108px;
+  height: 108px;
   display: grid;
   place-items: center;
 }
@@ -18,53 +21,71 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid var(--line);
-  transform: scale(calc(1 + var(--level) * 0.55));
-  opacity: calc(0.25 + var(--level) * 0.6);
-  transition: transform 60ms linear, opacity 60ms linear;
+  background: repeating-conic-gradient(
+    from 0deg,
+    var(--hh-yellow) 0deg 2.2deg,
+    transparent 2.2deg 13deg
+  );
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 38%,
+    #000 40%,
+    #000 calc(58% + var(--level) * 22%),
+    transparent calc(60% + var(--level) * 22%)
+  );
+  mask: radial-gradient(
+    circle,
+    transparent 38%,
+    #000 40%,
+    #000 calc(58% + var(--level) * 22%),
+    transparent calc(60% + var(--level) * 22%)
+  );
+  opacity: calc(0.55 + var(--level) * 0.45);
+  transform: rotate(calc(var(--level) * 12deg));
+  transition: opacity 60ms linear, transform 60ms linear;
 }
 
+/* The sun stays yellow while listening -- pink rays are 1.9:1 on the green
+   and effectively vanish; the pink disc is what marks the live state. */
 .mic-ring.listening .mic-ring-halo {
-  border-color: var(--signal-dim);
-}
-
-.mic-ring::before {
-  content: "";
-  position: absolute;
-  inset: 18px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
+  opacity: 1;
 }
 
 .mic-button {
   position: relative;
   z-index: 1;
-  width: 84px;
-  height: 84px;
+  width: 74px;
+  height: 74px;
   border-radius: 50%;
-  background: var(--ink-raised);
-  border: 1px solid var(--line);
-  color: var(--paper-dim);
+  background: var(--hh-yellow);
+  border: 3px solid var(--line-strong);
+  color: var(--hh-outline);
   display: grid;
   place-items: center;
-  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+  box-shadow: 4px 4px 0 rgba(8, 48, 28, 0.45);
+  transition: color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.mic-button:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
 }
 
 .mic-ring.listening .mic-button {
-  color: var(--signal);
-  border-color: var(--signal);
-  background: color-mix(in srgb, var(--signal) 12%, var(--ink-raised));
+  background: var(--hh-pink);
+  color: var(--hh-cream);
 }
 
 .mic-ring.denied .mic-button,
 .mic-ring.unsupported .mic-button {
-  color: var(--refused);
-  border-color: var(--refused-dim);
+  background: var(--hh-green-raised);
+  color: var(--paper-dim);
+  border-color: var(--refused);
 }
 
 .mic-status {
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--paper-dim);
   min-height: 1em;
 }

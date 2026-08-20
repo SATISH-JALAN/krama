@@ -1,14 +1,47 @@
+/* Their footer band: the bougainvillea/marigold strip runs along the very
+   bottom edge (public/4.png) as a decorative rule -- the type sits in clear
+   green above it rather than on top of the flowers. */
 .footer {
-  border-top: 1px solid var(--line);
-  padding: var(--space-4);
+  position: relative;
+  padding: var(--space-3) var(--space-4) calc(76px + var(--space-2));
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--hh-green);
+}
+
+.footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--hh-yellow) 0 4px,
+    var(--hh-pink) 4px 8px
+  );
+}
+
+.footer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 76px;
+  /* Never let the strip scale below its illustrated weight on narrow
+     screens -- it turns into thin white trunks. */
+  background: url("/brand/palm-band.png") center bottom / max(900px, 100%) auto no-repeat;
+  pointer-events: none;
 }
 
 .footer-glossary {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-4);
 }
 
@@ -19,19 +52,23 @@
 }
 
 .glossary-name {
-  font-size: 0.7rem;
-  color: var(--signal);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--hh-yellow);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
 }
 
 .glossary-meaning {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--paper-dim);
   max-width: 180px;
 }
 
 .footer-note {
-  font-size: 0.65rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--paper-dim);
+  text-align: center;
 }

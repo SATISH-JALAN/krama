@@ -5,11 +5,12 @@
 }
 
 .lang-select select {
-  background: var(--ink-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: var(--space-1) var(--space-2);
-  color: var(--paper);
+  background: var(--board);
+  border: 2px solid var(--line-strong);
+  border-radius: 0;
+  padding: 3px var(--space-2);
+  color: var(--board-ink);
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
 }

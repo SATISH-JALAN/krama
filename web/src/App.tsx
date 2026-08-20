@@ -149,7 +149,10 @@ export default function App() {
           lang={lang}
         />
 
-        <Waterfall trace={result?.trace} />
+        {/* Only after a query: the empty-state copy ("trace not returned by
+            this server build") is about a server's response, not about the
+            page having just loaded. */}
+        {result && <Waterfall trace={result.trace} />}
       </main>
 
       <Footer />

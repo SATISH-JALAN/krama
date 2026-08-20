@@ -58,18 +58,10 @@ export default function Answer({ result, busy, synthesizing, synthesizeStatus, l
               state={synthesizing ? "pending" : result.synthesized ? "ready" : "unavailable"}
               tone="ungrounded"
             >
-              {result.synthesized && (
-                <>
-                  <p className="answer-text">{result.synthesized.answer}</p>
-                  <p className="answer-ungrounded-note">
-                    Not from the knowledge base — answered from the model's own knowledge, with no
-                    passage backing it. Treat it as unverified.
-                  </p>
-                  <div className="answer-meta">
-                    <span className="confidence mono">via {result.synthesized.provider}</span>
-                  </div>
-                </>
-              )}
+              {/* No disclaimer paragraph and no provider row: the card's own
+                  "general knowledge · unverified" label plus the refusal
+                  notice above it already say both things. */}
+              {result.synthesized && <p className="answer-text">{result.synthesized.answer}</p>}
               {/* Rendered even when the attempt yields nothing. Letting the
                   card disappear was a real reported confusion: the user saw a
                   bare "refused" and reasonably read it as the fallback never

@@ -1,42 +1,62 @@
+/* A cream signboard you type onto, keyline and drop-shadow included -- the
+   same panel treatment as the answer boards (see public/assests/agenda.png). */
 .transcript {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
+  align-items: stretch;
+  gap: 0;
   width: 100%;
-  max-width: 640px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: var(--space-2);
+  max-width: 660px;
+  background: var(--board);
+  border: 3px solid var(--line-strong);
+  box-shadow: 5px 5px 0 rgba(8, 48, 28, 0.45);
 }
 
 .transcript-input {
   flex: 1;
   background: none;
   border: none;
-  color: var(--paper);
+  color: var(--board-ink);
   font-family: var(--font-content);
   font-size: 1.05rem;
   resize: none;
   min-height: 1.6em;
   max-height: 6em;
+  padding: var(--space-3);
+}
+
+.transcript-input:focus {
+  outline: none;
+}
+
+.transcript:focus-within {
+  outline: 3px solid var(--hh-yellow);
+  outline-offset: 2px;
 }
 
 .transcript-input::placeholder {
-  color: var(--paper-dim);
+  color: #557a66; /* 4.7:1 on the cream board */
 }
 
+/* Interim ASR text is real content, not a hint -- it gets full-strength
+   muted, not placeholder grey. */
 .transcript-input.interim {
-  color: var(--paper-dim);
+  color: #4a6b57;
   font-style: italic;
 }
 
+/* .btn-hh (global.css) supplies the yellow fill and mono type; the woven
+   ribbon border is dropped here so the button sits flush inside the board. */
 .transcript-submit {
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  color: var(--signal);
-  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-image: none;
+  border-left: 3px solid var(--line-strong);
+  padding-inline: var(--space-4);
   white-space: nowrap;
 }
 
 .transcript-submit:disabled {
-  color: var(--paper-dim);
+  border-image: none;
+  background: #e4e0d0;
+  color: #3e5a4a;
+  opacity: 1;
 }

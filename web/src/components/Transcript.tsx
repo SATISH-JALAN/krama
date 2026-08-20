@@ -33,7 +33,7 @@ export default function Transcript({ value, interimText, onChange, onSubmit, dis
         rows={1}
         disabled={disabled}
       />
-      <button type="submit" className="transcript-submit mono" disabled={disabled || !value.trim()}>
+      <button type="submit" className="transcript-submit btn-hh" disabled={disabled || !value.trim()}>
         ask →
       </button>
     </form>
