@@ -2,7 +2,7 @@
 
 Voice-enabled RAG for HH Goa 2026, Shortlisting Task 2. Speak a question in Hindi, Bengali, Tamil,
 or English (or let the server auto-detect) → real Sarvam speech-to-text → local ONNX retrieval
-core → a grounded, extractive answer in well under 200ms, with citations and a full per-stage
+core → a grounded answer in well under 200ms, with citations and a full per-stage
 trace, plus an optional LLM-synthesized answer on a separate, slower tier. Solo build, zero
 budget, entirely free-tier.
 
@@ -32,7 +32,7 @@ flowchart LR
     DENSE --> FUSE[jata: RRF fusion<br/>dense:bm25 = 2:1]
     BM25 --> FUSE
     FUSE --> L2[L2 guard<br/>OOD, top-score threshold]
-    L2 --> ANSWER[extractive answer<br/>+ citation + confidence]
+    L2 --> ANSWER[top passage<br/>+ citation + confidence]
 
     L0 -.refuse.-> REFUSED[maun: refused,<br/>reason returned]
     L1 -.refuse.-> REFUSED
@@ -46,7 +46,7 @@ frontend's trace waterfall):
 | Module | Name means | Does |
 |---|---|---|
 | `server/stt/` | **shruti** — "that which is heard" | Real Sarvam batch STT |
-| `server/krama/` | "step-by-step" recitation | Chunking + extractive answer selection, BM25 |
+| `server/krama/` | "step-by-step" recitation | Chunking + extractive span scoring (built, not wired), BM25 |
 | `server/ghana/` | "dense" recitation | ONNX embedding + the dense vector index |
 | `server/jata/` | "braided" recitation | Reciprocal Rank Fusion (dense + lexical) |
 | `server/maun/` | "silence" | Guardrails — decides when *not* to answer |
@@ -64,10 +64,10 @@ This system answers on **two tiers**, and they are measured and reported separat
 averaged into one blended figure. The `<200ms` budget is claimed against tier 1 only, and tier 2's
 numbers are published in full below rather than left as an unmeasured gap.
 
-### Tier 1 — fast extractive path (the \<200ms budget)
+### Tier 1 — fast retrieval path (the \<200ms budget)
 
 **Boundary, stated up front**: t₀ = transcript-in (text already available, whether typed or from
-STT), t₁ = grounded-answer-out. This is the fast, synchronous, extractive path only. STT and
+STT), t₁ = grounded-answer-out. This is the fast, synchronous, retrieval path only. STT and
 LLM-based synthesis are *outside* this boundary and reported separately, never folded in — the
 brief's "\<200ms core" refers to this path specifically.
 
@@ -283,8 +283,8 @@ theoretical design:
 2. **Real Sarvam *batch* STT** (`POST /speech-to-text`), not the originally-planned WebSocket
    realtime proxy — far less code, still a genuine Sarvam integration, verified against the live
    API.
-3. **Extractive generation on the fast path; LLM synthesis on a separate, slower tier.** The
-   sub-200ms answer is extractive by design — it *is* a real answer (the passage that answers the
+3. **Passage-level answers on the fast path; LLM synthesis on a separate, slower tier.** The
+   sub-200ms answer is retrieval-only by design — it *is* a real answer (the passage that answers the
    question, returned with its citation), not a placeholder. `server/krama/extract.ts` (the real
    per-sentence scoring engine) exists and is tested, but isn't wired into `handleQuery()` — it
    needs sentence-level artifacts for the *full* production corpus that don't exist yet (only the
@@ -292,8 +292,9 @@ theoretical design:
    path returns the top reranked passage rather than a scored span within it. Genuine LLM
    generation is wired and live on `POST /query/synthesize`
    (`handleSynthesisQuery()` → `server/llm/{gemini,cerebras,synthesize}.ts`), including a
-   structured-output-with-repair layer (force JSON, validate, one repair attempt, fall back to
-   extractive) and a Gemini→Cerebras provider chain behind the harness's retry + circuit breaker.
+   structured-output-with-repair layer (force JSON, validate, one repair attempt, fall back to the
+   fast-path answer) and a Gemini→Cerebras provider chain behind the harness's retry + circuit
+   breaker.
    It is **off the <200ms budget and measured separately** ([Latency](#latency)) — the frontend
    calls it as a second request after the fast answer has already rendered, never inline with it.
    Both keys are optional: with neither set the fast path is unaffected and the synthesized answer
