@@ -1,0 +1,64 @@
+%% KRAMA — architecture, matching server/index.ts as actually written.
+%% Paste into Excalidraw via the "+" menu -> "Mermaid to Excalidraw".
+%% NOTE: guard order here is L0 -> embed -> L1 -> cache -> dense+bm25 -> L2 -> fuse
+%% -> rerank -> L3, which is the order handleQuery() really runs (README's mermaid
+%% puts L2 after fusion and omits rerank/L3 entirely).
+
+flowchart LR
+    MIC["Mic - AudioWorklet<br/>16 kHz Int16 PCM"] --> EPV["POST /query/voice"]
+    TYPED["Typed query<br/>lang auto-detect"] --> EPT["POST /query"]
+    EPV --> STT["shruti - Sarvam batch STT<br/>real API call"]
+
+    STT --> L0
+    EPT --> L0
+
+    subgraph TIER1["TIER 1 - handleQuery() - p50 61ms, p99 121ms, no LLM"]
+        direction LR
+        L0["L0 maun<br/>empty / gibberish<br/>0.7ms"] --> EMB["embed_query ghana<br/>e5-small ONNX fp32<br/>384-d, 9.7ms"]
+        EMB --> L1["L1 maun<br/>safety, cos >= 0.83<br/>to unsafe exemplars"]
+        L1 --> CACHE{"semantic cache<br/>cos > 0.97 ?"}
+        CACHE -- miss --> DENSE["dense_search ghana<br/>brute-force cosine<br/>59666 x 384, 17.5ms"]
+        CACHE -- miss --> BM25["bm25_search krama<br/>Indic BM25<br/>9.8ms"]
+        DENSE --> L2["L2 maun<br/>out-of-domain, centroid cos<br/>+ top score < 0.82"]
+        BM25 --> L2
+        L2 --> FUSE["fuse_rrf jata<br/>RRF, dense:bm25 = 2:1<br/>0.3ms"]
+        FUSE --> RERANK["rerank ghana<br/>cross-encoder int8, top-3<br/>49.5ms - the bottleneck"]
+        RERANK --> L3["L3 maun<br/>relevance gate<br/>score >= -2.0"]
+        L3 --> ANS["ANSWER<br/>top passage + citation<br/>confidence + trace[]"]
+    end
+
+    CACHE -- "hit, p50 7ms" --> ANS
+
+    L0 -.-> REF["maun REFUSAL<br/>refused: true + reason<br/>74/400 queries, 18.5%"]
+    L1 -.-> REF
+    L2 -.-> REF
+    L3 -.-> REF
+
+    ANS --> UI["React UI<br/>answer, citations,<br/>trace waterfall"]
+
+    EPS["POST /query/synthesize<br/>2nd request, after the<br/>fast answer has rendered"] --> SYN
+
+    subgraph TIER2["TIER 2 - synthesis - p50 2313ms, measured separately"]
+        direction LR
+        SYN["handleSynthesisQuery()<br/>runs the whole fast path first<br/>L0-L3 clear before any LLM"] --> HARN["harness retry + breaker<br/>2 attempts, 30s deadline"]
+        HARN --> CHAIN["llm/chain.ts<br/>Gemini 3.6-flash -><br/>3.5-flash-lite -> Cerebras"]
+        CHAIN --> JSONV["llm/synthesize.ts<br/>force JSON, validate,<br/>1 repair, else fall back"]
+        JSONV --> GROUNDED["GROUNDED<br/>grounded: true<br/>+ citedChunkIds"]
+        JSONV --> DECLINED["DECLINED<br/>LLM refuses to pad<br/>13 / 32"]
+    end
+
+    REF -. "off_topic / no_grounding only" .-> GEN["answerFromGeneralKnowledge()<br/>UNGROUNDED, grounded: false<br/>labelled as such in the UI"]
+
+    classDef maun fill:#ffc9c9,stroke:#e03131
+    classDef ghana fill:#a5d8ff,stroke:#1971c2
+    classDef krama fill:#b2f2bb,stroke:#2f9e44
+    classDef jata fill:#ffec99,stroke:#f08c00
+    classDef shruti fill:#99e9f2,stroke:#0c8599
+    classDef llm fill:#eebefa,stroke:#9c36b5
+
+    class L0,L1,L2,L3,REF maun
+    class EMB,DENSE,RERANK ghana
+    class BM25,ANS krama
+    class CACHE,FUSE,GEN jata
+    class STT shruti
+    class MIC,TYPED,UI,EPS,SYN,CHAIN,JSONV,GROUNDED llm

@@ -37,3 +37,18 @@ artifacts/onnx/*
 !artifacts/onnx/special_tokens_map.json
 !artifacts/onnx/config.json
 !artifacts/thresholds.json
+
+# the cross-encoder reranker (server/ghana/rerank.ts, added after this file
+# was first written -- bootFromDisk() ALWAYS passes artifacts/onnx_reranker,
+# and rerank.boot()'s InferenceSession.create() throws rather than degrading
+# if it's absent, so omitting these crashes the container on boot.
+# int8 here, unlike the embedder: rerank.boot() is called with
+# "model_int8.onnx" explicitly, and a cross-encoder logit tolerates
+# quantization where the bi-encoder's 0.995 cosine gate did not.
+!artifacts/onnx_reranker
+artifacts/onnx_reranker/*
+!artifacts/onnx_reranker/model_int8.onnx
+!artifacts/onnx_reranker/tokenizer.json
+!artifacts/onnx_reranker/tokenizer_config.json
+!artifacts/onnx_reranker/special_tokens_map.json
+!artifacts/onnx_reranker/config.json

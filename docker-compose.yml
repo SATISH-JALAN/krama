@@ -1,0 +1,42 @@
+# KRAMA production stack: the Bun server + a Caddy TLS terminator in front.
+#
+# Caddy exists because the browser gives us no choice -- web/'s mic capture
+# (src/worklet/pcm.ts's getUserMedia) requires a secure context, and a
+# Vercel-hosted HTTPS frontend cannot fetch() a plain-http backend without
+# the browser blocking it as mixed content. Caddy provisions and renews a
+# real Let's Encrypt certificate on its own; there is no cert to manage.
+#
+# The krama service deliberately publishes NO host ports -- only Caddy is
+# reachable from outside, and it reaches krama over the internal compose
+# network. That keeps :3000 off the public internet entirely.
+services:
+  krama:
+    build: .
+    image: krama-server:local
+    restart: unless-stopped
+    # SARVAM_API_KEY / GEMINI_API_KEY / CEREBRAS_API_KEY -- never baked into
+    # the image, same discipline as the local `docker run --env-file` flow.
+    env_file: .env
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Named volumes, not bind mounts: caddy_data holds the issued
+      # certificate and the ACME account key. Losing it means re-issuing on
+      # every restart, which will hit Let's Encrypt's rate limit (5 certs per
+      # domain per week) and leave the demo without TLS at the worst moment.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - krama
+
+volumes:
+  caddy_data:
+  caddy_config:

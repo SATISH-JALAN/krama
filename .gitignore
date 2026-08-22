@@ -60,3 +60,11 @@ skills-lock.json
 # committed
 reference/
 RAGINGOA-main/
+
+# diagram working files (Excalidraw scene state + its clipboard exports) --
+# editor scratch, regenerated whenever the diagram is redrawn. The committed
+# diagram source is the .mmd; only rendered images belong in assets/.
+*.excalidraw
+*.excalidraw.png
+*.excalidraw.svg
+assets/*.clipboard.json

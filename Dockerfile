@@ -20,6 +20,7 @@ RUN bun install --production
 
 COPY server/ ./server/
 COPY artifacts/onnx ./artifacts/onnx
+COPY artifacts/onnx_reranker ./artifacts/onnx_reranker
 COPY artifacts/thresholds.json ./artifacts/thresholds.json
 COPY data/medium/passages_dedup.jsonl data/medium/embeddings.f32bin data/medium/embeddings_ids.json ./data/medium/
 
@@ -33,7 +34,7 @@ USER bun
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s \
   CMD bun -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["bun", "run", "server/index.ts"]

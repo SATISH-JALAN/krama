@@ -1,0 +1,29 @@
+# Replace BOTH the hostname below and KRAMA_PUBLIC_HOST in .env with your
+# real DuckDNS name before starting the stack. Caddy will not obtain a
+# certificate for a hostname whose DNS A record does not already point at
+# this machine -- set up DNS first, then `docker compose up`.
+krama.duckdns.org {
+	# Caddy terminates TLS and forwards plaintext to the Bun server over the
+	# internal compose network. `krama` resolves via compose's DNS; the port
+	# matches the Dockerfile's EXPOSE 3000 / PORT env default.
+	reverse_proxy krama:3000 {
+		# The fast path is sub-second, but POST /query/synthesize waits on a
+		# real Gemini call that live testing measured at up to ~19s, and
+		# server/index.ts's LLM_RETRY_OPTS allows a 30s deadline. Caddy's
+		# default write timeout would cut that off mid-flight and surface as
+		# a mystery 502 on the slow tier only.
+		transport http {
+			response_header_timeout 60s
+		}
+	}
+
+	# Gzip/zstd the JSON responses -- GroundedAnswer carries a full per-stage
+	# trace array plus passage text, which compresses well over a phone
+	# connection at a live demo.
+	encode zstd gzip
+
+	log {
+		output stdout
+		format console
+	}
+}

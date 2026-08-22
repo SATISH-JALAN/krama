@@ -1,0 +1,33 @@
+%% KRAMA — the 45-second version.
+%% Paste into Excalidraw: "More tools" dropdown -> "Mermaid to Excalidraw".
+
+flowchart LR
+    ASK["Ask<br/>voice or text<br/>hi · bn · ta · en"] --> STT["Speech to text<br/>real Sarvam API<br/>shruti"]
+    STT --> EMB["Embed<br/>e5-small ONNX<br/>ghana"]
+    EMB --> DENSE["Dense search<br/>59666 passages<br/>ghana"]
+    EMB --> BM25["BM25<br/>Indic tokenizer<br/>krama"]
+    DENSE --> FUSE["Fuse the two<br/>RRF, 2:1<br/>jata"]
+    BM25 --> FUSE
+    FUSE --> RERANK["Rerank<br/>cross-encoder<br/>top 3 · ghana"]
+    RERANK --> ANS["ANSWER<br/>the passage + its citation<br/>61 ms"]
+    ANS -.-> T2["optional tier 2<br/>LLM synthesis, ~2.3 s<br/>measured separately"]
+
+    EMB -.-> GUARD
+    BM25 -.-> GUARD
+    FUSE -.-> GUARD
+    RERANK -.-> GUARD
+    GUARD["maun — the guardrails<br/>L0 gibberish · L1 unsafe · L2 off-topic · L3 irrelevant<br/>refuse instead of answering (18.5% of queries)"]
+
+    classDef maun fill:#ffc9c9,stroke:#e03131
+    classDef ghana fill:#a5d8ff,stroke:#1971c2
+    classDef krama fill:#b2f2bb,stroke:#2f9e44
+    classDef jata fill:#ffec99,stroke:#f08c00
+    classDef shruti fill:#99e9f2,stroke:#0c8599
+    classDef llm fill:#eebefa,stroke:#9c36b5
+
+    class GUARD maun
+    class EMB,DENSE,RERANK ghana
+    class BM25,ANS krama
+    class FUSE jata
+    class STT shruti
+    class ASK,T2 llm
