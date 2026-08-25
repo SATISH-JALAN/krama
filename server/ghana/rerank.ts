@@ -45,6 +45,27 @@ let tokenizer: PreTrainedTokenizer | null = null;
 // standard cap for production cross-encoder rerankers for this exact
 // latency reason, not a KRAMA-specific compromise.
 const MAX_PAIR_TOKENS = 128;
+/**
+ * Character ceiling applied to each passage BEFORE tokenizing. Not a second
+ * truncation setting -- `truncation: true` below already clamps the model's
+ * input to MAX_PAIR_TOKENS, and this never changes what the model sees.
+ *
+ * It exists because the tokenizer is the wrong shape for this corpus. It is
+ * WASM (@huggingface/transformers, see embed.ts's docstring for why), and it
+ * tokenizes the WHOLE string before truncating -- so a 5,873-character passage
+ * costs full tokenization work, then has ~97% of that work thrown away. The
+ * corpus's longest 10% measured p90 195.4ms / max 341.1ms in this stage
+ * against 26.6ms at the median, and that tail is exactly the P99/P100 that
+ * pushed the fast path past its 200ms budget on the Ampere A1.
+ *
+ * 1600 is not a guess. Binary-searching the largest passage prefix that still
+ * fits inside MAX_PAIR_TOKENS, over 400 passages per language, the worst case
+ * is Tamil at 757 characters (hi 508, bn 504, en 630) -- Tamil packs the most
+ * characters per XLM-R token of the four. 1600 is a >2x margin over that, so
+ * no language can reach it before the token limit bites first. Re-measure this
+ * if MAX_PAIR_TOKENS rises or a new script is added to the corpus.
+ */
+const MAX_PAIR_CHARS = 1600;
 
 /**
  * @param artifactDir directory containing model.onnx (or model_int8.onnx)
@@ -91,8 +112,12 @@ export async function scoreBatch(query: string, passages: string[]): Promise<num
   if (!session || !tokenizer) throw new Error("rerank.boot() must be called before score()/scoreBatch()");
   if (passages.length === 0) return [];
 
+  // See MAX_PAIR_CHARS: cuts tokenizer work on long passages without changing
+  // a single token the model receives.
+  const clipped = passages.map((p) => (p.length > MAX_PAIR_CHARS ? p.slice(0, MAX_PAIR_CHARS) : p));
+
   const encoded = tokenizer(Array(passages.length).fill(query), {
-    text_pair: passages,
+    text_pair: clipped,
     padding: true,
     truncation: true,
     max_length: MAX_PAIR_TOKENS,
