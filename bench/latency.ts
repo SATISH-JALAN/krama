@@ -61,6 +61,32 @@ async function main(): Promise<void> {
 
   const LANGS = ["hi", "bn", "ta", "en"];
   const queries = LANGS.flatMap((lang) => loadQueries(lang, n));
+
+  // Warm-up, untimed. Bun/JSC tiers JIT compilation up over many executions
+  // of the same code path, and profiling the tail showed it: in a 400-query
+  // run, SEVEN of the ten slowest queries were in the first 33, decaying
+  // visibly (#0 163ms -> #1 137ms -> #4 99ms) toward a ~93ms steady state.
+  // Measuring that ramp as if it were serving latency describes a server in
+  // its first second of life, not one that has been up for a demo weekend.
+  //
+  // The warm-up set is deliberately DISJOINT from the timed set (rows n..n+W,
+  // not 0..n): re-running the same queries would populate the semantic cache
+  // (cos > 0.97) and turn the "uncached" measurement into cache hits.
+  //
+  // Cold-start cost is not hidden by this -- it is reported separately as
+  // firstQueryMs below, because "what does the first request after a deploy
+  // cost" is a real question with a different answer than "what does this
+  // server serve at".
+  const WARMUP_PER_LANG = 15;
+  const warmup = LANGS.flatMap((lang) => loadQueries(lang, n + WARMUP_PER_LANG).slice(n));
+  console.log(`warming up on ${warmup.length} disjoint queries (untimed)...`);
+  const firstStart = performance.now();
+  let firstQueryMs: number | null = null;
+  for (const row of warmup) {
+    await handleQuery(row.query, row.lang, row.qtype ?? "DESCRIPTION");
+    if (firstQueryMs === null) firstQueryMs = performance.now() - firstStart;
+  }
+
   console.log(`running ${queries.length} real queries (${n}/lang x ${LANGS.join("/")}) through handleQuery()...`);
 
   const uncachedHistogram = hdr.build({ useWebAssembly: false });
@@ -107,6 +133,9 @@ async function main(): Promise<void> {
 
   const summary = {
     generatedAt: new Date().toISOString(),
+    // Cost of the very first query after boot, before any JIT warm-up --
+    // reported so the warm-up above can never be mistaken for hiding it.
+    firstQueryMs: firstQueryMs === null ? null : Math.round(firstQueryMs),
     nQueries: queries.length,
     refusedCount,
     cacheHits,

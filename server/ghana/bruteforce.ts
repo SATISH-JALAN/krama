@@ -28,6 +28,9 @@ let ids: string[] = [];
 // never asked for and can't read -- a real bug found by voice-testing the
 // live app, not a hypothetical.
 let langs: string[] = [];
+// Reused across search() calls -- see the comment in search() for why.
+let scratchScores: Float32Array | null = null;
+let scratchCandidates: Int32Array | null = null;
 
 export async function boot(
   embeddingsPath: string,
@@ -68,7 +71,19 @@ export function search(
   // top-k via a full sort. n is tens of thousands at MVP scale, not
   // millions -- an O(n log n) sort is cheap here and simpler than a bounded
   // top-k structure, matching the calibration run's own measured latency.
-  const scores = new Float32Array(n);
+  // Scratch buffers are allocated once and reused across every search()
+  // call, not freshly per query. search() is fully synchronous -- no await
+  // inside it -- so a call always runs to completion before the next one
+  // starts, and reuse is safe on JS's single thread.
+  //
+  // Why bother: the previous version allocated a 239KB Float32Array plus a
+  // growing candidates array on EVERY query, ~100MB of garbage across a
+  // 400-query benchmark. That is exactly the shape that produces the
+  // occasional multi-hundred-millisecond GC pause showing up in P100.
+  if (!scratchScores || scratchScores.length < n) scratchScores = new Float32Array(n);
+  if (!scratchCandidates || scratchCandidates.length < n) scratchCandidates = new Int32Array(n);
+  const scores = scratchScores;
+  let candidateCount = 0;
   // Only rows that survive the language filter are collected here, so the
   // sort below never touches the ~45k rows of the other three languages.
   // The previous version scored into a full-length array, wrote -Infinity
@@ -77,20 +92,23 @@ export function search(
   // most of them ordering values that could never be returned. Results are
   // byte-identical (those rows were unreachable either way); this is purely
   // the same answer computed without the wasted work.
-  const candidates: number[] = [];
   for (let i = 0; i < n; i++) {
     if (useFilter && langs[i] !== filterLang) continue;
     const base = i * DIM;
     let dot = 0;
     for (let d = 0; d < DIM; d++) dot += queryVector[d] * embeddings[base + d];
     scores[i] = dot;
-    candidates.push(i);
+    scratchCandidates[candidateCount++] = i;
   }
 
-  candidates.sort((a, b) => scores[b] - scores[a]);
-  return candidates
-    .slice(0, topK)
-    .map((i) => ({ passageId: ids[i]!, score: scores[i]! }));
+  const candidates = scratchCandidates.subarray(0, candidateCount);
+  candidates.sort((a, b) => scores[b]! - scores[a]!);
+  const out: { passageId: string; score: number }[] = [];
+  for (let k = 0; k < Math.min(topK, candidateCount); k++) {
+    const i = candidates[k]!;
+    out.push({ passageId: ids[i]!, score: scores[i]! });
+  }
+  return out;
 }
 
 export function size(): number {
