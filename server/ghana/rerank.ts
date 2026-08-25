@@ -57,7 +57,14 @@ export async function boot(
 ): Promise<void> {
   session = await ort.InferenceSession.create(`${artifactDir}/${modelFile}`, {
     executionProviders: ["cpu"],
-    intraOpNumThreads: 2,
+    // 4, not embed.ts's 2, and deliberately different: embed.ts runs ONE
+    // short query at batch size 1, where extra threads cost more in
+    // coordination than they save (ARCHITECTURE.md 5.1). This session runs
+    // RERANK_TOP_N=3 pairs at up to MAX_PAIR_TOKENS=128 through a 12-layer
+    // cross-encoder -- matmuls large enough that intra-op parallelism
+    // actually pays. Measured on the Oracle Ampere A1 deploy target, this
+    // stage was ~160ms of a 212ms P50, i.e. 75% of the whole budget.
+    intraOpNumThreads: 4,
     interOpNumThreads: 1,
     graphOptimizationLevel: "all",
   });

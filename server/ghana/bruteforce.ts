@@ -69,22 +69,28 @@ export function search(
   // millions -- an O(n log n) sort is cheap here and simpler than a bounded
   // top-k structure, matching the calibration run's own measured latency.
   const scores = new Float32Array(n);
+  // Only rows that survive the language filter are collected here, so the
+  // sort below never touches the ~45k rows of the other three languages.
+  // The previous version scored into a full-length array, wrote -Infinity
+  // for filtered-out rows, then sorted ALL 59,666 indices and discarded the
+  // -Infinity entries three lines later -- roughly 950k comparator calls,
+  // most of them ordering values that could never be returned. Results are
+  // byte-identical (those rows were unreachable either way); this is purely
+  // the same answer computed without the wasted work.
+  const candidates: number[] = [];
   for (let i = 0; i < n; i++) {
-    if (useFilter && langs[i] !== filterLang) {
-      scores[i] = -Infinity;
-      continue;
-    }
+    if (useFilter && langs[i] !== filterLang) continue;
     const base = i * DIM;
     let dot = 0;
     for (let d = 0; d < DIM; d++) dot += queryVector[d] * embeddings[base + d];
     scores[i] = dot;
+    candidates.push(i);
   }
 
-  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => scores[b] - scores[a]);
-  return order
+  candidates.sort((a, b) => scores[b] - scores[a]);
+  return candidates
     .slice(0, topK)
-    .filter((i) => scores[i] !== -Infinity)
-    .map((i) => ({ passageId: ids[i], score: scores[i] }));
+    .map((i) => ({ passageId: ids[i]!, score: scores[i]! }));
 }
 
 export function size(): number {

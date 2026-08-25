@@ -36,8 +36,24 @@ import { resolve } from "path";
 import { AutoTokenizer, type PreTrainedTokenizer } from "@huggingface/transformers";
 
 const QUERY_PREFIX = "query: ";
+const PASSAGE_PREFIX = "passage: ";
 export function addQueryPrefix(text: string): string {
   return `${QUERY_PREFIX}${text}`;
+}
+
+/**
+ * e5 is an ASYMMETRIC model: queries are prefixed "query: " and passages
+ * "passage: " (ingest/prefixing.py, CLAUDE.md #1). At runtime this module
+ * only ever embedded queries -- the corpus was embedded offline in Python
+ * by ingest/04_embed.py -- so `query: ` was hardcoded below. Anything that
+ * needs to embed a PASSAGE with this same session (the eval adapter, which
+ * has to build a throwaway index out of someone else's corpus) must use
+ * this prefix instead, or every passage vector lands in the wrong half of
+ * the asymmetric space and recall collapses for a reason that has nothing
+ * to do with the model's actual quality.
+ */
+export function addPassagePrefix(text: string): string {
+  return `${PASSAGE_PREFIX}${text}`;
 }
 
 let session: ort.InferenceSession | null = null;
@@ -105,13 +121,20 @@ function l2normalize(v: Float32Array): Float32Array {
 }
 
 const MAX_QUERY_TOKENS = 64; // ARCHITECTURE.md §9: truncate query tokens to 64
+// Passages are not queries: 64 tokens is a deliberate latency choice for a
+// short spoken query, but it would silently clip the tail off a real corpus
+// passage. ingest/04_embed.py embedded the corpus via sentence-transformers'
+// .encode(), i.e. at the model's own baked-in 512-token limit -- match that
+// here so a passage embedded through this session is comparable to one from
+// the production artifacts.
+const MAX_PASSAGE_TOKENS = 512;
 
-function tokenize(text: string): { inputIds: BigInt64Array; attentionMask: BigInt64Array } {
+function tokenize(text: string, maxTokens: number): { inputIds: BigInt64Array; attentionMask: BigInt64Array } {
   if (!tokenizer) throw new Error("embed.boot() must be called before embed()");
   const encoded = tokenizer(text, {
     padding: false,
     truncation: true,
-    max_length: MAX_QUERY_TOKENS,
+    max_length: maxTokens,
   });
   return {
     inputIds: encoded.input_ids.data as BigInt64Array,
@@ -119,11 +142,17 @@ function tokenize(text: string): { inputIds: BigInt64Array; attentionMask: BigIn
   };
 }
 
-export async function embed(text: string): Promise<Float32Array> {
+export async function embed(
+  text: string,
+  kind: "query" | "passage" = "query",
+): Promise<Float32Array> {
   if (!session) throw new Error("embed.boot() must be called before embed()");
 
-  const prefixed = addQueryPrefix(text);
-  const { inputIds, attentionMask } = tokenize(prefixed);
+  const prefixed = kind === "passage" ? addPassagePrefix(text) : addQueryPrefix(text);
+  const { inputIds, attentionMask } = tokenize(
+    prefixed,
+    kind === "passage" ? MAX_PASSAGE_TOKENS : MAX_QUERY_TOKENS,
+  );
   const seqLen = inputIds.length;
 
   const tokenTypeIds = new BigInt64Array(seqLen); // all zeros, see module docstring

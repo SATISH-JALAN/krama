@@ -7,7 +7,8 @@
     "dev": "bun run --hot server/index.ts",
     "test": "bun test",
     "bench": "bun run bench/latency.ts",
-    "bench:synthesis": "bun run bench/synthesis.ts"
+    "bench:synthesis": "bun run bench/synthesis.ts",
+    "eval:adapter": "bun run eval-adapter/serve.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
